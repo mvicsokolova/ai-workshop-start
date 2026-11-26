@@ -44,13 +44,16 @@ test('./fixture: every skill, sorted by name, linked to its file, with a warning
   assert.equal(
     fixture.stdout,
     [
-      'fixture · 3 skills',
+      'fixture · 4 skills',
       "code-style — Follow the project's code style.",
       `  ${root}/.github/skills/code-style/SKILL.md`,
       'commits — Write commit messages the way this repository does.',
       `  ${root}/.claude/skills/commits/SKILL.md`,
+      '  also in .github/skills/commits/SKILL.md',
       'release-checklist',
       `  ${root}/.agents/skills/release-checklist/SKILL.md`,
+      'triage — Triage a new issue.',
+      `  ${root}/agent/skills/triage/SKILL.md`,
     ].join('\n'),
   );
   assert.match(fixture.stderr, /^warning: \.agents\/skills\/release-checklist\/SKILL\.md: malformed front matter: /);
