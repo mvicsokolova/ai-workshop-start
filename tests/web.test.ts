@@ -2,6 +2,7 @@
 // repository answered in tests/helpers.ts.
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
+import { request as httpRequest } from 'node:http';
 import { createServer } from 'node:net';
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -261,30 +262,91 @@ test('scan: the field accepts GitHub repositories only, never a local path', () 
   }
 });
 
+const USAGE = 'Send { "url": "owner/repo" } or { "url": "https://github.com/owner/repo" }';
+
 test('scan: a local path, any other string, no url or a body that is not JSON → 400, nothing is scanned', async (t) => {
   const { server, opened, post, current } = await serveScanning(t);
   const before = await current();
-  const cases: [unknown, string | undefined, RegExp][] = [
-    [{ url: './fixture' }, undefined, /^Not a GitHub repository: \.\/fixture\. Send /],
-    [{ url: FIXTURE }, undefined, /^Not a GitHub repository: /],
-    [{ url: 'not a repository' }, undefined, /^Not a GitHub repository: not a repository\. /],
-    [{ url: 'https://gitlab.com/JetBrains/example' }, undefined, /^Not a GitHub repository: /],
-    [{}, undefined, /^No repository URL\. Send \{ "url": "owner\/repo" \}/],
-    [{ url: 42 }, undefined, /^No repository URL\. /],
-    [undefined, 'null', /^No repository URL\. /],
-    [undefined, 'JetBrains/example', /^The request is not JSON\. /],
-    [undefined, '', /^The request is not JSON\. /],
-    [undefined, JSON.stringify({ url: 'a/b'.padEnd(5000, 'c') }), /^The request is too large\. /],
+  const cases: [unknown, string | undefined, string][] = [
+    [{ url: './fixture' }, undefined, `Not a GitHub repository: ./fixture. ${USAGE}`],
+    [{ url: FIXTURE }, undefined, `Not a GitHub repository: ${FIXTURE}. ${USAGE}`],
+    [{ url: 'not a repository' }, undefined, `Not a GitHub repository: not a repository. ${USAGE}`],
+    [{ url: 'https://gitlab.com/JetBrains/example' }, undefined, `Not a GitHub repository: https://gitlab.com/JetBrains/example. ${USAGE}`],
+    [{}, undefined, `No repository URL. ${USAGE}`],
+    [{ url: 42 }, undefined, `No repository URL. ${USAGE}`],
+    [undefined, 'null', `No repository URL. ${USAGE}`],
+    [undefined, 'JetBrains/example', `The request is not JSON. ${USAGE}`],
+    [undefined, '', `The request is not JSON. ${USAGE}`],
+    [undefined, JSON.stringify({ url: 'a/b'.padEnd(5000, 'c') }), `The request is too large. ${USAGE}`],
+    // 4 KB is counted in bytes: 2100 characters of 2 bytes each are too large.
+    [undefined, JSON.stringify({ url: 'a/'.padEnd(2100, 'é') }), `The request is too large. ${USAGE}`],
   ];
   for (const [body, raw, error] of cases) {
     const answer = await post('scan', body, raw);
     assert.equal(answer.status, 400, raw ?? JSON.stringify(body));
-    assert.match(answer.body.error ?? '', error);
+    assert.deepEqual(answer.body, { error }, raw ?? JSON.stringify(body));
   }
   assert.deepEqual(opened, [FIXTURE]);
   assert.deepEqual(await current(), before);
   // Only POST.
   assert.equal((await fetch(`${server.url}api/scan`)).status, 404);
+});
+
+test('scan: the body is read as UTF-8, even with a character split across two chunks', async (t) => {
+  const { server, opened } = await serveScanning(t);
+  const bytes = Buffer.from(JSON.stringify({ url: 'ü/репо' }));
+  const split = bytes.indexOf(Buffer.from('ü')) + 1; // inside the two bytes of ü
+  const answer = await new Promise<{ status: number; body: unknown }>((resolve, reject) => {
+    const request = httpRequest(`${server.url}api/scan`, { method: 'POST', headers: { 'Content-Type': 'application/json' } }, (response) => {
+      let text = '';
+      response.setEncoding('utf8');
+      response.on('data', (chunk) => (text += chunk));
+      response.on('end', () => resolve({ status: response.statusCode ?? 0, body: JSON.parse(text) }));
+    });
+    request.on('error', reject);
+    request.write(bytes.subarray(0, split));
+    setTimeout(() => request.end(bytes.subarray(split)), 50);
+  });
+  assert.deepEqual(answer, { status: 400, body: { error: `Not a GitHub repository: ü/репо. ${USAGE}` } });
+  assert.deepEqual(opened, [FIXTURE]);
+});
+
+test('scan: only the page itself may scan; another site gets 403 or 415, nothing is scanned', async (t) => {
+  const { server, opened, current } = await serveScanning(t);
+  const before = await current();
+  const { port } = new URL(server.url);
+  const send = async (path: string, headers: Record<string, string>, body?: string) => {
+    const response = await fetch(`${server.url}api/${path}`, { method: 'POST', headers, body });
+    return { status: response.status, body: await response.json() };
+  };
+  const repo = JSON.stringify({ url: 'JetBrains/empty' });
+  // A "simple" cross-origin request, which a browser sends without a preflight.
+  for (const type of ['text/plain', 'text/plain;charset=UTF-8', 'application/x-www-form-urlencoded', 'multipart/form-data; boundary=x']) {
+    assert.deepEqual(await send('scan', { 'Content-Type': type }, repo), {
+      status: 415,
+      body: { error: `The request must be Content-Type: application/json. ${USAGE}` },
+    });
+  }
+  assert.deepEqual(await send('scan', {}, repo), {
+    status: 415,
+    body: { error: `The request must be Content-Type: application/json. ${USAGE}` },
+  });
+  for (const origin of ['https://evil.example', `http://evil.example:${port}`, 'null']) {
+    const error = { error: `Only this page can scan; not ${origin}` };
+    assert.deepEqual(await send('scan', { 'Content-Type': 'application/json', Origin: origin }, repo), { status: 403, body: error });
+    assert.deepEqual(await send('scan', { 'Content-Type': 'text/plain', Origin: origin }, repo), { status: 403, body: error });
+    assert.deepEqual(await send('rescan', { Origin: origin }), { status: 403, body: error });
+  }
+  assert.deepEqual(opened, [FIXTURE]);
+  assert.deepEqual(await current(), before);
+
+  // The page's own origin, by either name, and a request without Origin may scan.
+  const json = { 'Content-Type': 'application/json; charset=utf-8' };
+  assert.equal((await send('scan', { ...json, Origin: new URL(server.url).origin }, repo)).status, 200);
+  assert.equal((await send('scan', { ...json, Origin: `http://localhost:${port}` }, JSON.stringify({ url: 'JetBrains/example' }))).status, 200);
+  assert.equal((await send('rescan', { Origin: `http://127.0.0.1:${port}` })).status, 200);
+  assert.equal((await send('scan', { 'Content-Type': 'APPLICATION/JSON' }, repo)).status, 200);
+  assert.deepEqual(opened, [FIXTURE, 'https://github.com/JetBrains/empty', 'https://github.com/JetBrains/example', 'https://github.com/JetBrains/example', 'https://github.com/JetBrains/empty']);
 });
 
 test('scan: an unknown or unreachable repository → 502, the previous catalog stays', async (t) => {
@@ -412,8 +474,13 @@ test('the CLI serves ./fixture, prints where, and stores nothing', async (t) => 
   assert.ok(match, line);
   const catalog = (await (await fetch(`${match[1]}api/catalog`)).json()) as Catalog;
   assert.equal(catalog.skills.length, 5);
-  const local = await fetch(`${match[1]}api/scan`, { method: 'POST', body: JSON.stringify({ url: FIXTURE }) });
+  const local = await fetch(`${match[1]}api/scan`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url: FIXTURE }),
+  });
   assert.equal(local.status, 400);
+  assert.deepEqual(await local.json(), { error: `Not a GitHub repository: ${FIXTURE}. ${USAGE}` });
   assert.deepEqual(readdirSync(cwd), []);
   const exited = new Promise((resolve) => child.on('exit', (code, signal) => resolve(code ?? signal)));
   child.kill('SIGINT');

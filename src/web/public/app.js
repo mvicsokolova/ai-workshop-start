@@ -822,23 +822,35 @@ els.detail.addEventListener('click', (event) => {
   }
 });
 
+// Rescans the repository on this page. The server's current one may be another: another tab may have
+// scanned it. So a GitHub repository is scanned by name; only a local directory uses api/rescan.
 els.rescan.addEventListener('click', async () => {
   if (scanning) return;
+  scanning = true;
   els.rescan.classList.add('spinning');
   els.rescan.disabled = true;
+  const shown = shownRepo();
   try {
-    const response = await fetch('api/rescan', { method: 'POST' });
-    const body = await response.json();
+    const response = await fetch(shown ? 'api/scan' : 'api/rescan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: shown ? JSON.stringify({ url: shown }) : undefined,
+    });
+    const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.error ?? `the server answered ${response.status}`);
     const before = catalog.repository.commit;
     useCatalog(body);
+    setScanning();
     toast(before && before !== body.repository.commit ? `Updated to ${body.repository.commit.slice(0, 7)}` : 'Scanned again: up to date');
   } catch (error) {
     toast(`Scan failed: ${error.message}`);
   } finally {
+    scanning = false;
     els.rescan.classList.remove('spinning');
     els.rescan.disabled = false;
   }
+  // The URL names the repository shown, or moved on while the scan ran.
+  followRepo();
 });
 
 els.theme.addEventListener('click', () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'));

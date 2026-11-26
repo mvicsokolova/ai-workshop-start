@@ -35,6 +35,8 @@ export async function startServer(options: ServeOptions): Promise<RunningServer>
   let current = options.input;
   /** One scan at a time: a second request while one runs is a 409. */
   let scanning = false;
+  /** The origins of this server's own page, known once it listens; any other Origin may not POST. */
+  const ownOrigins = new Set<string>();
 
   /** Scans the input; on success its catalog and the input become the current ones. */
   async function scan(input: string): Promise<Catalog> {
@@ -62,8 +64,19 @@ export async function startServer(options: ServeOptions): Promise<RunningServer>
   async function handle(request: IncomingMessage, response: ServerResponse) {
     const { pathname } = new URL(request.url ?? '/', 'http://localhost');
     if (pathname === '/api/catalog' && request.method === 'GET') return json(response, 200, catalog);
+    if ((pathname === '/api/rescan' || pathname === '/api/scan') && request.method === 'POST') {
+      // Another site's page may POST here too: browsers send its Origin, so refuse it.
+      const origin = request.headers.origin;
+      if (origin !== undefined && !ownOrigins.has(origin)) {
+        return json(response, 403, { error: `Only this page can scan; not ${origin}` });
+      }
+    }
     if (pathname === '/api/rescan' && request.method === 'POST') return answerScan(response, current);
     if (pathname === '/api/scan' && request.method === 'POST') {
+      // Another site can send a "simple" text/plain POST without asking first; application/json it cannot.
+      if (!isJson(request.headers['content-type'])) {
+        return json(response, 415, { error: `The request must be Content-Type: application/json. ${USAGE}` });
+      }
       const url = await readRepository(request);
       if ('error' in url) return json(response, 400, url);
       return answerScan(response, url.input);
@@ -91,8 +104,10 @@ export async function startServer(options: ServeOptions): Promise<RunningServer>
     server.listen(options.port, host, resolve);
   });
   const { port } = server.address() as AddressInfo;
+  const url = `http://${host === '0.0.0.0' ? 'localhost' : host}:${port}/`;
+  ownOrigins.add(new URL(url).origin).add(`http://localhost:${port}`).add(`http://127.0.0.1:${port}`);
   return {
-    url: `http://${host === '0.0.0.0' ? 'localhost' : host}:${port}/`,
+    url,
     catalog: () => catalog,
     close: () =>
       new Promise((resolve, reject) => {
@@ -103,19 +118,25 @@ export async function startServer(options: ServeOptions): Promise<RunningServer>
 }
 
 const USAGE = 'Send { "url": "owner/repo" } or { "url": "https://github.com/owner/repo" }';
-/** A request body larger than this is not a repository URL. */
+/** A request body larger than this many bytes is not a repository URL. */
 const MAX_BODY = 4096;
+
+/** `application/json`, with or without parameters such as `charset`. */
+const isJson = (type: string | undefined) => type?.split(';')[0].trim().toLowerCase() === 'application/json';
 
 /** The `url` of a POST /api/scan body, as the GitHub URL to open, or the 400 error. */
 async function readRepository(request: IncomingMessage): Promise<{ input: string } | { error: string }> {
-  let text = '';
-  for await (const chunk of request) {
-    text += chunk;
-    if (text.length > MAX_BODY) return { error: `The request is too large. ${USAGE}` };
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  for await (const chunk of request as AsyncIterable<Buffer>) {
+    bytes += chunk.length;
+    if (bytes > MAX_BODY) return { error: `The request is too large. ${USAGE}` };
+    chunks.push(chunk);
   }
   let body: unknown;
   try {
-    body = JSON.parse(text);
+    // Decoded once, so a character split across two chunks stays whole.
+    body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
   } catch {
     return { error: `The request is not JSON. ${USAGE}` };
   }

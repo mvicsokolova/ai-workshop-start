@@ -31,13 +31,18 @@ https://mvicsokolova.github.io/ai-workshop-start/
   which becomes the *current* one
   - `url`: `owner/repo` or `https://github.com/owner/repo` (as `scan` reads it: with or without the
     scheme, `.git`, a trailing slash); opened as `https://github.com/owner/repo`
-  - A local path, any other string, no `url`, a body that is not JSON → *400* `{ error }`; nothing is
-    scanned, the catalog stays
+  - A local path, any other string, no `url`, a body that is not JSON or over *4 KB* → *400*
+    `{ error }`; nothing is scanned, the catalog stays. The body is read as UTF-8
   - An unknown or unreachable repository → *502* `{ error }`; the old catalog stays
   - A repository with *0 skills* is a valid, empty catalog: `skills: []`, empty facets
 - `POST /api/rescan`: scans the *current* repository again (the last one scanned successfully: the
   one from the command line until a scan succeeds), answers the new catalog; a failure → *502*
   `{ error }`, the old catalog stays
+- *Only the page itself* may scan: a `POST` with an `Origin` other than the server's own
+  (`http://127.0.0.1:<port>` or `http://localhost:<port>`) → *403* `{ error }`; a request without
+  `Origin` (not from a browser) is allowed. `POST /api/scan` without `Content-Type: application/json`
+  → *415* `{ error }`, so another site cannot send it without a CORS preflight, which the server never
+  approves. In both cases nothing is scanned and the catalog stays
 - *One scan at a time*: a scan or rescan while one runs → *409* `{ error }`; the running one still
   finishes and becomes the current catalog. No queue
 - Nothing is cached: only the current catalog is kept, in memory
@@ -88,3 +93,7 @@ On the server only: *hidden* in the static export.
     of the link stays. A failed scan puts the repository shown back into the URL
   - Back and forward switch between the GitHub repositories scanned
   - A URL without `repo` keeps the repository shown; a GitHub one is added to the URL
+- The rescan button rescans *the repository shown*, by `POST /api/scan` for a GitHub one (the
+  server's current one may be another, scanned in another tab), by `POST /api/rescan` for the local
+  directory from the command line; then the URL names the repository shown. A success clears the
+  error of an earlier failed scan
