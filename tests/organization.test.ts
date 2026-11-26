@@ -133,6 +133,35 @@ test('listing: a user account is listed the same way as an organization', async 
   );
 });
 
+test("listing: with a token, the token's own user gets its private repositories too; another user, or a token without a user, the public ones", async () => {
+  const pub = ownerRecording('someone', 'User', [{ name: 'dotfiles' }]);
+  const own: Recording = {
+    'https://api.github.com/user/repos?affiliation=owner&per_page=100&page=1': {
+      status: 200,
+      body: ['dotfiles', 'diary'].map((name) => ({
+        full_name: `someone/${name}`,
+        default_branch: 'main',
+        archived: false,
+        fork: false,
+        private: name === 'diary',
+        size: 10,
+      })),
+    },
+  };
+  const cases: [string, Recording, string | undefined, string[]][] = [
+    ['no token', { ...pub, ...own }, undefined, ['someone/dotfiles']],
+    ['own user, other case', { ...pub, ...own, 'https://api.github.com/user': { status: 200, body: { login: 'SomeOne' } } }, 't', ['someone/dotfiles', 'someone/diary']],
+    ['another user', { ...pub, ...own, 'https://api.github.com/user': { status: 200, body: { login: 'other' } } }, 't', ['someone/dotfiles']],
+    ['app token', { ...pub, ...own, 'https://api.github.com/user': { status: 403, body: { message: 'Resource not accessible by integration' } } }, 't', ['someone/dotfiles']],
+  ];
+  for (const [name, recording, token, repositories] of cases) {
+    const organization = await openOrganization('someone', { fetch: replay(recording), token });
+    assert.deepEqual(organization.repositories, repositories, name);
+  }
+  const limited = { ...pub, 'https://api.github.com/user': RATE_LIMITED };
+  await assert.rejects(openOrganization('someone', { fetch: replay(limited), token: 't' }), /rate limit/);
+});
+
 test('unknown organization → a clear message, exit code 1', async () => {
   for (const input of ['https://github.com/nobody', 'nobody']) {
     const result = await atlasWith(NOBODY, ['scan', input]);

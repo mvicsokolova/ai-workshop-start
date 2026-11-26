@@ -80,11 +80,10 @@ export async function openOrganization(input: string, options: GitHubOptions): P
     `${API}/users/${name.login}`,
     `Organization not found: https://github.com/${name.login}`,
   );
-  // With a token, an organization's list holds the private repositories the token can see.
-  const list = owner.type === 'Organization' ? `${API}/orgs/${owner.login}/repos` : `${API}/users/${owner.login}/repos`;
+  const list = await repositoryList(github, owner, options.token);
   const listed: ListedRepository[] = [];
   for (let page = 1; ; page++) {
-    const repositories = await github.json<ListedRepository[]>(`${list}?per_page=100&page=${page}`);
+    const repositories = await github.json<ListedRepository[]>(`${list}per_page=100&page=${page}`);
     listed.push(...repositories);
     if (repositories.length < 100) break;
   }
@@ -97,6 +96,25 @@ export async function openOrganization(input: string, options: GitHubOptions): P
     // A client per repository: its answers are not kept once it is scanned.
     open: (fullName) => openRepository(client(options), byName.get(fullName)!, { ...options, everyFile: true }),
   };
+}
+
+/**
+ * Where an owner's repositories are listed, up to the query. With a token, an organization's list
+ * holds the private repositories the token can see; a user's public list never does, so the token's
+ * own user is listed through `/user/repos`. A token that cannot tell its user (an app's, say) gets
+ * the public list.
+ */
+async function repositoryList(github: Client, owner: { login: string; type: string }, token?: string): Promise<string> {
+  if (owner.type === 'Organization') return `${API}/orgs/${owner.login}/repos?`;
+  const users = `${API}/users/${owner.login}/repos?`;
+  if (!token) return users;
+  try {
+    const me = await github.json<{ login: string }>(`${API}/user`);
+    return me.login.toLowerCase() === owner.login.toLowerCase() ? `${API}/user/repos?affiliation=owner&` : users;
+  } catch (error) {
+    if (error instanceof RateLimitError) throw error;
+    return users;
+  }
 }
 
 /** Code search looks at the whole default branch, 100 results a page. */

@@ -24,6 +24,8 @@ Skill: id = `owner/repo:path`, name, description, commit, body, files
 ## Organization
 - Its repositories through the GitHub API, *all pages*; public ones, and the private ones
   `GITHUB_TOKEN` can see. **Skipped:** archived, forks, empty (size 0)
+- A user account: its public repositories; the token's own user (`GET /user`) also its private
+  ones. A token that cannot tell its user → the public ones
 - Each repository: the rules below, through the tree (not code search: its rate limit is too low);
   each skill keeps its repository, and its link pins *that repository's* commit
 - The same name in two repositories → *two skills*
