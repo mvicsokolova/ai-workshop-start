@@ -1,13 +1,17 @@
 // What the website shows: a scan, with each skill's owners, topics and rendered Markdown.
 import { Marked, type Tokens } from 'marked';
-import { skillLink, type Repository, type Skill } from '../core/model.ts';
-import { scan, type Source } from '../core/scan.ts';
+import { skillLink, sortSkills, type Repository, type Skill } from '../core/model.ts';
+import { isOrganization, scan, scanOrganization, type Organization, type Source, type Target } from '../core/scan.ts';
 
 export type Heading = { depth: number; text: string; id: string };
 export type FileLink = { path: string; link: string };
 
 export type CatalogSkill = {
   id: string;
+  /** What the page calls it, unique in the catalog: the name; `<repo>/<name>` in an organization. */
+  key: string;
+  /** `owner/repo`. */
+  repository: string;
   name: string;
   description: string;
   path: string;
@@ -23,9 +27,9 @@ export type CatalogSkill = {
   /** The body as safe HTML: raw HTML is shown as text, relative links point at the repository. */
   html: string;
   headings: Heading[];
-  /** The other skills its body links to, by name. */
+  /** The other skills of its repository its body links to, by key. */
   links: string[];
-  /** The skills whose bodies link to it, by name. */
+  /** The skills whose bodies link to it, by key. */
   linkedFrom: string[];
   /** The body without Markdown punctuation, for the full-text search. */
   text: string;
@@ -35,11 +39,16 @@ export type CatalogSkill = {
 export type Facet = { name: string; count: number };
 
 export type Catalog = {
+  /** One repository, or an organization's repositories. */
+  kind: 'repository' | 'organization';
+  /** The repository scanned; for an organization, the organization itself, without a commit. */
   repository: Repository;
   skills: CatalogSkill[];
   warnings: string[];
   owners: Facet[];
   topics: Facet[];
+  /** The repositories with skills, `owner/repo`. */
+  repositories: Facet[];
   /** ISO time of the scan. */
   scannedAt: string;
 };
@@ -60,36 +69,70 @@ export const TOPICS: [string, RegExp][] = [
   ['Platform APIs', /\bapis?\b|symbol|registry|action|eel\b|jna\b|modcommand/i],
 ];
 
-/** Scans the source and prepares every skill for the page. */
-export async function buildCatalog(source: Source): Promise<Catalog> {
+/** Scans the repository or the organization and prepares every skill for the page. */
+export async function buildCatalog(target: Target): Promise<Catalog> {
+  if (isOrganization(target)) return organizationCatalog(target);
+  const { repository, skills, warnings } = await repositorySkills(target, '');
+  return catalog('repository', repository, skills, warnings);
+}
+
+/** Every repository's skills in one catalog; each skill's key names its repository. */
+async function organizationCatalog(organization: Organization): Promise<Catalog> {
+  const { results, warnings } = await scanOrganization(organization, (source) =>
+    repositorySkills(source, `${source.repository.name}/`),
+  );
+  const repository: Repository = {
+    id: organization.id,
+    organization: organization.id,
+    name: organization.id,
+    url: organization.url,
+    commit: '',
+  };
+  return catalog('organization', repository, sortSkills(results.flatMap((result) => result.skills)), warnings);
+}
+
+function catalog(kind: Catalog['kind'], repository: Repository, skills: CatalogSkill[], warnings: string[]): Catalog {
+  return {
+    kind,
+    repository,
+    skills,
+    warnings,
+    owners: facets(skills.flatMap((skill) => skill.owners)),
+    topics: facets(skills.flatMap((skill) => skill.topics)),
+    repositories: facets(skills.map((skill) => skill.repository)),
+    scannedAt: new Date().toISOString(),
+  };
+}
+
+/** One repository's skills, keyed `<prefix><name>`; links between skills stay in the repository. */
+async function repositorySkills(
+  source: Source,
+  prefix: string,
+): Promise<{ repository: Repository; skills: CatalogSkill[]; warnings: string[] }> {
   const result = await scan(source);
   const { repository } = result;
   const byPath = new Map<string, string>();
   for (const skill of result.skills) {
     for (const path of [skill.path, ...skill.copies]) {
-      byPath.set(path, skill.name);
-      byPath.set(path.slice(0, path.lastIndexOf('/')), skill.name);
+      byPath.set(path, prefix + skill.name);
+      byPath.set(path.slice(0, path.lastIndexOf('/')), prefix + skill.name);
     }
   }
   const skillAt = (path: string) => byPath.get(path.replace(/\/$/, ''));
-  const skills = await Promise.all(result.skills.map((skill) => catalogSkill(source, repository, skill, skillAt)));
+  const skills = await Promise.all(
+    result.skills.map((skill) => catalogSkill(source, repository, skill, prefix + skill.name, skillAt)),
+  );
   for (const skill of skills) {
-    for (const name of skill.links) skills.find((other) => other.name === name)?.linkedFrom.push(skill.name);
+    for (const key of skill.links) skills.find((other) => other.key === key)?.linkedFrom.push(skill.key);
   }
-  return {
-    repository,
-    skills,
-    warnings: result.warnings,
-    owners: facets(skills.flatMap((skill) => skill.owners)),
-    topics: facets(skills.flatMap((skill) => skill.topics)),
-    scannedAt: new Date().toISOString(),
-  };
+  return { repository, skills, warnings: result.warnings };
 }
 
 async function catalogSkill(
   source: Source,
   repository: Repository,
   skill: Skill,
+  key: string,
   skillAt: (path: string) => string | undefined,
 ): Promise<CatalogSkill> {
   const directory = skill.path.slice(0, skill.path.lastIndexOf('/'));
@@ -99,6 +142,8 @@ async function catalogSkill(
   const text = plainText(skill.body);
   return {
     id: skill.id,
+    key,
+    repository: skill.repository,
     name: skill.name,
     description: skill.description,
     path: skill.path,
@@ -112,7 +157,7 @@ async function catalogSkill(
     ),
     html,
     headings,
-    links: links.filter((name) => name !== skill.name),
+    links: links.filter((other) => other !== key),
     linkedFrom: [],
     text,
     words: text.split(/\s+/).filter(Boolean).length,

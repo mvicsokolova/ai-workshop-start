@@ -1,4 +1,5 @@
-// The Skill Atlas page: search, filter and read the skills of one repository; on the server, scan another one.
+// The Skill Atlas page: search, filter and read the skills of one repository or an organization; on the
+// server, scan another repository.
 // The state lives in the URL hash, so every view can be shared, bookmarked and navigated with Back.
 
 const $ = (id) => document.getElementById(id);
@@ -6,7 +7,7 @@ const els = {
   repo: $('repo'), repoName: $('repo-name'), repoCommit: $('repo-commit'),
   subtitle: $('subtitle'), suggestions: $('suggestions'),
   query: $('query'), clearQuery: $('clear-query'),
-  topics: $('topic-filters'), owners: $('owner-filters'), ownerSearch: $('owner-search'), contents: $('content-filters'),
+  topics: $('topic-filters'), owners: $('owner-filters'), repositories: $('repository-filters'), repositoryGroup: $('repository-group'), ownerSearch: $('owner-search'), contents: $('content-filters'),
   reset: $('reset'), emptyReset: $('empty-reset'), count: $('count'), active: $('active'), sort: $('sort'),
   grid: $('grid'), empty: $('empty'), warnings: $('warnings'),
   viewGrid: $('view-grid'), viewList: $('view-list'), filters: $('filters'), filtersToggle: $('filters-toggle'),
@@ -36,7 +37,7 @@ let catalog;
 let skills = [];
 let visible = [];
 let selected = 0;
-let state = { repo: '', q: '', topic: [], owner: [], has: [], sort: 'relevance', view: 'grid', skill: '' };
+let state = { repo: '', q: '', topic: [], owner: [], repository: [], has: [], sort: 'relevance', view: 'grid', skill: '' };
 let lastRenderedSkill = '';
 
 // ---------- Loading ----------
@@ -60,6 +61,7 @@ function useCatalog(next) {
     const extraFiles = skill.files.filter((f) => f.path !== 'OWNERSHIP');
     return {
       ...skill,
+      key: skill.key ?? skill.name,
       extraFiles,
       nameLower: skill.name.toLowerCase(),
       nameWords: skill.name.toLowerCase().split(/[-_\s.]+/),
@@ -84,6 +86,7 @@ function readHash() {
     q: params.get('q') ?? '',
     topic: list('topic'),
     owner: list('owner'),
+    repository: list('repository'),
     has: list('has'),
     sort: params.get('sort') ?? 'relevance',
     view: params.get('view') === 'list' ? 'list' : 'grid',
@@ -96,7 +99,7 @@ function writeHash({ push = false } = {}) {
   const params = new URLSearchParams();
   if (state.repo) params.set('repo', state.repo);
   if (state.q) params.set('q', state.q);
-  for (const key of ['topic', 'owner', 'has']) if (state[key].length) params.set(key, state[key].join(','));
+  for (const key of ['topic', 'owner', 'repository', 'has']) if (state[key].length) params.set(key, state[key].join(','));
   if (state.sort !== 'relevance') params.set('sort', state.sort);
   if (state.view !== 'grid') params.set('view', state.view);
   if (state.skill) params.set('skill', state.skill);
@@ -131,8 +134,11 @@ window.addEventListener('popstate', () => {
 
 let scanning = false;
 
-/** The GitHub repository shown, `owner/repo`; '' for a local directory. */
-const shownRepo = () => (catalog?.repository.url.startsWith('https://github.com/') ? catalog.repository.id : '');
+/** The GitHub repository shown, `owner/repo`; '' for a local directory or an organization. */
+const shownRepo = () =>
+  catalog?.kind !== 'organization' && catalog?.repository.url.startsWith('https://github.com/') ? catalog.repository.id : '';
+/** An organization's catalog: its skills come from several repositories. */
+const manyRepositories = () => (catalog?.repositories?.length ?? 0) > 1;
 const sameRepo = (a, b) => a.toLowerCase() === b.toLowerCase();
 
 /** Scans the repository in the URL when it is not the one shown; puts the shown one there when it has none. */
@@ -242,6 +248,7 @@ function score(skill, queryTerms) {
 function matchesFilters(skill, except) {
   if (except !== 'topic' && state.topic.length && !state.topic.some((t) => skill.topics.includes(t))) return false;
   if (except !== 'owner' && state.owner.length && !state.owner.some((o) => skill.owners.includes(o))) return false;
+  if (except !== 'repository' && state.repository.length && !state.repository.includes(skill.repository)) return false;
   if (except !== 'has' && state.has.length) {
     for (const id of state.has) {
       const content = CONTENTS.find((c) => c.id === id);
@@ -256,8 +263,8 @@ function compute() {
   const scored = skills.map((skill) => ({ skill, score: score(skill, queryTerms) })).filter((r) => r.score > 0);
   const results = scored.filter((r) => matchesFilters(r.skill));
   const by = {
-    relevance: (a, b) => b.score - a.score || cmp(a.skill.name, b.skill.name),
-    name: (a, b) => cmp(a.skill.name, b.skill.name),
+    relevance: (a, b) => b.score - a.score || cmp(a.skill.name, b.skill.name) || cmp(a.skill.key, b.skill.key),
+    name: (a, b) => cmp(a.skill.name, b.skill.name) || cmp(a.skill.key, b.skill.key),
     long: (a, b) => b.skill.words - a.skill.words,
     short: (a, b) => a.skill.words - b.skill.words,
     files: (a, b) => b.skill.extraFiles.length - a.skill.extraFiles.length || cmp(a.skill.name, b.skill.name),
@@ -266,7 +273,8 @@ function compute() {
   // Each group's counts: what choosing it would add, given everything else that is chosen.
   const facetCounts = (group, values) => {
     const pool = scored.filter((r) => matchesFilters(r.skill, group)).map((r) => r.skill);
-    return new Map(values.map((v) => [v, pool.filter((s) => (group === 'topic' ? s.topics : s.owners).includes(v)).length]));
+    const of = { topic: (s) => s.topics, owner: (s) => s.owners, repository: (s) => [s.repository] }[group];
+    return new Map(values.map((v) => [v, pool.filter((s) => of(s).includes(v)).length]));
   };
   const contentPool = scored.filter((r) => matchesFilters(r.skill, 'has')).map((r) => r.skill);
   return {
@@ -274,6 +282,7 @@ function compute() {
     results: results.map((r) => r.skill),
     topicCounts: facetCounts('topic', catalog.topics.map((t) => t.name)),
     ownerCounts: facetCounts('owner', catalog.owners.map((o) => o.name)),
+    repositoryCounts: facetCounts('repository', (catalog.repositories ?? []).map((r) => r.name)),
     contentCounts: new Map(CONTENTS.map((c) => [c.id, contentPool.filter(c.test).length])),
   };
 }
@@ -327,7 +336,11 @@ function renderHeader() {
   els.repo.hidden = false;
   els.repo.href = repository.url;
   els.repoName.textContent = repository.id;
-  els.repoCommit.textContent = repository.commit ? repository.commit.slice(0, 7) : 'local';
+  const organization = catalog.kind === 'organization';
+  const repositories = catalog.repositories?.length ?? 0;
+  els.repoCommit.textContent = organization
+    ? `${repositories} ${repositories === 1 ? 'repository' : 'repositories'}`
+    : repository.commit ? repository.commit.slice(0, 7) : 'local';
   els.repo.title = repository.commit ? `Scanned at commit ${repository.commit}` : repository.url;
   document.title = `${repository.id} · Skill Atlas`;
   const files = skills.reduce((n, s) => n + s.extraFiles.length, 0);
@@ -341,6 +354,7 @@ function renderHeader() {
   els.subtitle.innerHTML = `Search, filter and read the agent skills of <strong>${escape(repository.id)}</strong>.${when}`;
   const stats = [
     [skills.length, skills.length === 1 ? 'skill' : 'skills'],
+    [organization ? repositories : 0, repositories === 1 ? 'repository' : 'repositories'],
     [catalog.owners.length, catalog.owners.length === 1 ? 'team' : 'teams'],
     [catalog.topics.length, 'topics'],
     [files, 'supporting files'],
@@ -360,7 +374,7 @@ function renderHeader() {
 
 function render() {
   if (!catalog) return;
-  const { queryTerms, results, topicCounts, ownerCounts, contentCounts } = compute();
+  const { queryTerms, results, topicCounts, ownerCounts, repositoryCounts, contentCounts } = compute();
   const pattern = termPattern(queryTerms);
   visible = results;
   if (selected >= visible.length) selected = Math.max(0, visible.length - 1);
@@ -398,6 +412,20 @@ function render() {
         .join('') || '<p class="muted small">No team by that name.</p>'
     : '<p class="muted small">No OWNERSHIP files in this repository.</p>';
 
+  // Only an organization's catalog has more than one repository to choose from.
+  els.repositoryGroup.hidden = !manyRepositories();
+  els.repositories.innerHTML = manyRepositories()
+    ? catalog.repositories
+        .map(({ name }) => {
+          const on = state.repository.includes(name);
+          const n = repositoryCounts.get(name);
+          return `<label class="check${!n && !on ? ' dim' : ''}"><input type="checkbox" data-repository="${escape(name)}"${
+            on ? ' checked' : ''
+          }><span class="check-label">${escape(name)}</span><span class="check-count">${n}</span></label>`;
+        })
+        .join('')
+    : '';
+
   els.contents.innerHTML = CONTENTS.map(({ id, label }) => {
     const on = state.has.includes(id);
     const n = contentCounts.get(id);
@@ -406,7 +434,7 @@ function render() {
     }><span class="check-label">${escape(label)}</span><span class="check-count">${n}</span></label>`;
   }).join('');
 
-  const filtered = state.topic.length + state.owner.length + state.has.length;
+  const filtered = state.topic.length + state.owner.length + state.repository.length + state.has.length;
   els.reset.hidden = !filtered && !state.q;
   const total = skills.length;
   els.count.innerHTML =
@@ -420,12 +448,14 @@ function render() {
   els.active.innerHTML = [
     ...state.topic.map((t) => pill('topic', t, escape(t))),
     ...state.owner.map((o) => pill('owner', o, escape(o))),
+    ...state.repository.map((r) => pill('repository', r, escape(r))),
     ...state.has.map((h) => pill('has', h, escape(CONTENTS.find((c) => c.id === h)?.label ?? h))),
   ].join('');
 
   els.grid.innerHTML = results
     .map((skill, index) => {
       const tags = [
+        ...(manyRepositories() ? [`<span class="tag plain">${escape(skill.repository)}</span>`] : []),
         ...skill.owners.map((o) => `<span class="tag owner ${hue(o)}">${highlight(o, pattern)}</span>`),
         ...skill.topics.map((t) => `<span class="tag">${highlight(t, pattern)}</span>`),
       ].join('');
@@ -434,8 +464,8 @@ function render() {
         skill.extraFiles.length ? `${skill.extraFiles.length} ${skill.extraFiles.length === 1 ? 'file' : 'files'}` : '',
         skill.copies.length ? `${skill.copies.length + 1} agents` : '',
       ].filter(Boolean);
-      return `<a class="card${index === selected ? ' selected' : ''}" href="${skillHref(skill.name)}" data-index="${index}" data-name="${escape(
-        skill.name,
+      return `<a class="card${index === selected ? ' selected' : ''}" href="${skillHref(skill.key)}" data-index="${index}" data-name="${escape(
+        skill.key,
       )}">
         <div class="card-head"><h3>${highlight(skill.name, pattern)}</h3><span class="card-arrow" aria-hidden="true">→</span></div>
         <p class="card-description">${skill.description ? highlight(skill.description, pattern) : '<em class="muted">No description</em>'}</p>
@@ -455,16 +485,17 @@ function render() {
   renderDetail(pattern);
 }
 
-function skillHref(name) {
+/** A skill's link in the page, by its key: the name, `<repo>/<name>` in an organization. */
+function skillHref(key) {
   const params = new URLSearchParams(location.hash.replace(/^#\/?/, ''));
-  params.set('skill', name);
+  params.set('skill', key);
   return `#/?${params}`;
 }
 
 // ---------- Detail ----------
 
 function renderDetail(pattern) {
-  const skill = state.skill && skills.find((s) => s.name === state.skill);
+  const skill = state.skill && skills.find((s) => s.key === state.skill);
   const open = Boolean(skill);
   if (!open) {
     if (!els.detail.hidden) {
@@ -480,19 +511,22 @@ function renderDetail(pattern) {
     lastRenderedSkill = '';
     return;
   }
-  const index = visible.findIndex((s) => s.name === skill.name);
+  const index = visible.findIndex((s) => s.key === skill.key);
   if (index >= 0) selected = index;
   els.position.textContent = index >= 0 ? `${index + 1} / ${visible.length}` : 'not in the results';
   els.prev.disabled = index <= 0;
   els.next.disabled = index < 0 || index >= visible.length - 1;
 
-  if (lastRenderedSkill === skill.name && els.markdown.dataset.query === state.q) return;
-  const fresh = lastRenderedSkill !== skill.name;
-  lastRenderedSkill = skill.name;
+  if (lastRenderedSkill === skill.key && els.markdown.dataset.query === state.q) return;
+  const fresh = lastRenderedSkill !== skill.key;
+  lastRenderedSkill = skill.key;
 
   els.detailName.innerHTML = highlight(skill.name, pattern);
   els.detailDescription.innerHTML = skill.description ? highlight(skill.description, pattern) : '<em class="muted">No description</em>';
   els.detailTags.innerHTML = [
+    ...(manyRepositories()
+      ? [`<button type="button" class="tag" data-filter-repository="${escape(skill.repository)}" title="Show this repository's skills">${escape(skill.repository)}</button>`]
+      : []),
     ...skill.owners.map(
       (o) => `<button type="button" class="tag owner ${hue(o)}" data-filter-owner="${escape(o)}" title="Show this team's skills">${escape(o)}</button>`,
     ),
@@ -501,11 +535,11 @@ function renderDetail(pattern) {
   ].join('');
   els.detailActions.innerHTML = `
     <a class="button primary" href="${escape(skill.link)}" target="_blank" rel="noopener noreferrer">${
-      catalog.repository.commit ? 'Open on GitHub' : 'Open the file'
+      skill.link.startsWith('https://github.com/') ? 'Open on GitHub' : 'Open the file'
     } <span aria-hidden="true">↗</span></a>
     <button class="button" type="button" data-copy="${escape(skill.link)}" data-copy-label="Link">Copy link</button>
     <button class="button" type="button" data-copy="${escape(skill.path)}" data-copy-label="Path">Copy path</button>
-    <button class="button" type="button" data-copy="${escape(location.href.split('#')[0] + skillHref(skill.name))}" data-copy-label="Atlas link">Share</button>`;
+    <button class="button" type="button" data-copy="${escape(location.href.split('#')[0] + skillHref(skill.key))}" data-copy-label="Atlas link">Share</button>`;
 
   els.markdown.innerHTML = skill.html || '<p class="muted">This SKILL.md has no body.</p>';
   els.markdown.dataset.query = state.q;
@@ -538,12 +572,12 @@ function renderDetail(pattern) {
 }
 
 function filesSection(skill) {
-  const related = (title, names) =>
-    names.length
-      ? `<div class="files-block"><h3>${title}</h3><ul class="related-list">${names
-          .map((name) => {
-            const other = skills.find((s) => s.name === name);
-            return `<li><a href="${skillHref(name)}" data-skill="${escape(name)}"><strong>${escape(name)}</strong>${
+  const related = (title, keys) =>
+    keys.length
+      ? `<div class="files-block"><h3>${title}</h3><ul class="related-list">${keys
+          .map((key) => {
+            const other = skills.find((s) => s.key === key);
+            return `<li><a href="${skillHref(key)}" data-skill="${escape(key)}"><strong>${escape(other?.name ?? key)}</strong>${
               other?.description ? `<span>${highlight(other.description, undefined)}</span>` : ''
             }</a></li>`;
           })
@@ -635,8 +669,8 @@ function observeHeadings() {
   }
 }
 
-function openSkill(name, { push = true } = {}) {
-  update({ skill: name }, { push: push && !state.skill });
+function openSkill(key, { push = true } = {}) {
+  update({ skill: key }, { push: push && !state.skill });
 }
 
 function closeSkill() {
@@ -646,9 +680,9 @@ function closeSkill() {
 function step(delta) {
   if (!visible.length) return;
   if (state.skill) {
-    const index = visible.findIndex((s) => s.name === state.skill);
+    const index = visible.findIndex((s) => s.key === state.skill);
     const next = visible[Math.min(visible.length - 1, Math.max(0, index + delta))];
-    if (next) openSkill(next.name, { push: false });
+    if (next) openSkill(next.key, { push: false });
     return;
   }
   selected = Math.min(visible.length - 1, Math.max(0, selected + delta));
@@ -714,7 +748,7 @@ els.query.addEventListener('keydown', (event) => {
     step(-1);
   } else if (event.key === 'Enter' && visible[selected]) {
     event.preventDefault();
-    openSkill(visible[selected].name);
+    openSkill(visible[selected].key);
   } else if (event.key === 'Escape') {
     if (els.query.value) {
       els.query.value = '';
@@ -737,6 +771,10 @@ els.owners.addEventListener('change', (event) => {
   const box = event.target.closest('[data-owner]');
   if (box) update({ owner: toggle(state.owner, box.dataset.owner) });
 });
+els.repositories.addEventListener('change', (event) => {
+  const box = event.target.closest('[data-repository]');
+  if (box) update({ repository: toggle(state.repository, box.dataset.repository) });
+});
 els.ownerSearch.addEventListener('input', () => render());
 els.contents.addEventListener('change', (event) => {
   const box = event.target.closest('[data-has]');
@@ -747,12 +785,13 @@ els.active.addEventListener('click', (event) => {
   if (!pill) return;
   if (pill.dataset.removeTopic) update({ topic: state.topic.filter((v) => v !== pill.dataset.removeTopic) });
   if (pill.dataset.removeOwner) update({ owner: state.owner.filter((v) => v !== pill.dataset.removeOwner) });
+  if (pill.dataset.removeRepository) update({ repository: state.repository.filter((v) => v !== pill.dataset.removeRepository) });
   if (pill.dataset.removeHas) update({ has: state.has.filter((v) => v !== pill.dataset.removeHas) });
 });
 const resetAll = () => {
   els.query.value = '';
   els.ownerSearch.value = '';
-  update({ q: '', topic: [], owner: [], has: [] });
+  update({ q: '', topic: [], owner: [], repository: [], has: [] });
 };
 els.reset.addEventListener('click', resetAll);
 els.emptyReset.addEventListener('click', resetAll);
@@ -806,13 +845,17 @@ els.detail.addEventListener('click', (event) => {
     return;
   }
   const owner = event.target.closest('[data-filter-owner]');
-  if (owner) return update({ owner: [owner.dataset.filterOwner], topic: [], has: [], skill: '' }, { push: true });
+  if (owner) return update({ owner: [owner.dataset.filterOwner], topic: [], repository: [], has: [], skill: '' }, { push: true });
   const topic = event.target.closest('[data-filter-topic]');
-  if (topic) return update({ topic: [topic.dataset.filterTopic], owner: [], has: [], skill: '' }, { push: true });
+  if (topic) return update({ topic: [topic.dataset.filterTopic], owner: [], repository: [], has: [], skill: '' }, { push: true });
+  const repository = event.target.closest('[data-filter-repository]');
+  if (repository) {
+    return update({ repository: [repository.dataset.filterRepository], topic: [], owner: [], has: [], skill: '' }, { push: true });
+  }
   const skillLink = event.target.closest('a[data-skill]');
   if (skillLink && !event.metaKey && !event.ctrlKey) {
     event.preventDefault();
-    if (skills.some((s) => s.name === skillLink.dataset.skill)) update({ skill: skillLink.dataset.skill }, { push: true });
+    if (skills.some((s) => s.key === skillLink.dataset.skill)) update({ skill: skillLink.dataset.skill }, { push: true });
     return;
   }
   const anchor = event.target.closest('a[href^="#h-"]');
@@ -823,7 +866,8 @@ els.detail.addEventListener('click', (event) => {
 });
 
 // Rescans the repository on this page. The server's current one may be another: another tab may have
-// scanned it. So a GitHub repository is scanned by name; only a local directory uses api/rescan.
+// scanned it. So a GitHub repository is scanned by name; a local directory and an organization, which
+// api/scan does not take, use api/rescan.
 els.rescan.addEventListener('click', async () => {
   if (scanning) return;
   scanning = true;
@@ -866,7 +910,7 @@ document.addEventListener('keydown', (event) => {
     return;
   }
   if (inField || event.metaKey || event.ctrlKey || event.altKey || els.shortcuts.open) return;
-  const skill = state.skill && skills.find((s) => s.name === state.skill);
+  const skill = state.skill && skills.find((s) => s.key === state.skill);
   switch (event.key) {
     case '/':
       event.preventDefault();
@@ -897,7 +941,7 @@ document.addEventListener('keydown', (event) => {
       step(-1);
       break;
     case 'Enter':
-      if (!state.skill && visible[selected] && !event.target.closest('a, button')) openSkill(visible[selected].name);
+      if (!state.skill && visible[selected] && !event.target.closest('a, button')) openSkill(visible[selected].key);
       break;
     case 'c':
       if (skill) copy(skill.link, 'Link');

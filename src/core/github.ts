@@ -1,6 +1,6 @@
-import { AtlasError } from './errors.ts';
+import { AtlasError, RateLimitError } from './errors.ts';
 import { SKILL_ROOTS } from './find.ts';
-import type { Source } from './scan.ts';
+import type { Organization, Source } from './scan.ts';
 
 /** The part of `fetch` the core uses, so tests and the browser can pass their own. */
 export type Fetch = (url: string, init?: { headers?: Record<string, string> }) => Promise<Response>;
@@ -27,10 +27,16 @@ export async function openGitHub(input: string, options: GitHubOptions): Promise
   const name = parseGitHubUrl(input);
   if (!name) throw new AtlasError(`Not a GitHub repository URL: ${input}`);
   const github = client(options);
-  const info = await github.json<{ full_name: string; default_branch: string }>(
+  const info = await github.json<RepositoryInfo>(
     `${API}/repos/${name.owner}/${name.repo}`,
     `Repository not found: https://github.com/${name.owner}/${name.repo}`,
   );
+  return openRepository(github, info, options);
+}
+
+type RepositoryInfo = { full_name: string; default_branch: string };
+
+async function openRepository(github: Client, info: RepositoryInfo, options: GitHubOptions): Promise<Source> {
   const id = info.full_name;
   const { sha } = await github.json<{ sha: string }>(`${API}/repos/${id}/commits/${encodePath(info.default_branch)}`);
   const warnings: string[] = [];
@@ -42,6 +48,73 @@ export async function openGitHub(input: string, options: GitHubOptions): Promise
     warnings,
     read: (path) => github.raw(`${RAW}/${id}/${sha}/${encodePath(path)}`),
   };
+}
+
+/** A GitHub login: letters, digits and inner hyphens. */
+const LOGIN = '[a-z\\d](?:[a-z\\d-]*[a-z\\d])?';
+
+/**
+ * An organization or a user: `https://github.com/<org>`, with or without the scheme, `www.` or a
+ * trailing slash, or a bare `<org>`. `bare` tells the caller a local path of that name wins.
+ */
+export function parseGitHubOrganization(input: string): { login: string; bare: boolean } | undefined {
+  const text = input.trim();
+  const url = new RegExp(`^(?:https?://)?(?:www\\.)?github\\.com/(${LOGIN})/?$`, 'i').exec(text);
+  if (url) return { login: url[1], bare: false };
+  const bare = new RegExp(`^${LOGIN}$`, 'i').exec(text);
+  return bare ? { login: bare[0], bare: true } : undefined;
+}
+
+type ListedRepository = RepositoryInfo & { archived: boolean; fork: boolean; size: number };
+
+/**
+ * Lists an organization's or a user's repositories, all pages, through the GitHub API. Archived
+ * repositories, forks and empty ones are left out. Each repository is then opened through the tree:
+ * per-repository code search would run into the search rate limit.
+ */
+export async function openOrganization(input: string, options: GitHubOptions): Promise<Organization> {
+  const name = parseGitHubOrganization(input);
+  if (!name) throw new AtlasError(`Not a GitHub organization URL: ${input}`);
+  const github = client(options);
+  const owner = await github.json<{ login: string; type: string }>(
+    `${API}/users/${name.login}`,
+    `Organization not found: https://github.com/${name.login}`,
+  );
+  const list = await repositoryList(github, owner, options.token);
+  const listed: ListedRepository[] = [];
+  for (let page = 1; ; page++) {
+    const repositories = await github.json<ListedRepository[]>(`${list}per_page=100&page=${page}`);
+    listed.push(...repositories);
+    if (repositories.length < 100) break;
+  }
+  const kept = listed.filter((repository) => !repository.archived && !repository.fork && repository.size > 0);
+  const byName = new Map(kept.map((repository) => [repository.full_name, repository]));
+  return {
+    id: owner.login,
+    url: `https://github.com/${owner.login}`,
+    repositories: [...byName.keys()],
+    // A client per repository: its answers are not kept once it is scanned.
+    open: (fullName) => openRepository(client(options), byName.get(fullName)!, { ...options, everyFile: true }),
+  };
+}
+
+/**
+ * Where an owner's repositories are listed, up to the query. With a token, an organization's list
+ * holds the private repositories the token can see; a user's public list never does, so the token's
+ * own user is listed through `/user/repos`. A token that cannot tell its user (an app's, say) gets
+ * the public list.
+ */
+async function repositoryList(github: Client, owner: { login: string; type: string }, token?: string): Promise<string> {
+  if (owner.type === 'Organization') return `${API}/orgs/${owner.login}/repos?`;
+  const users = `${API}/users/${owner.login}/repos?`;
+  if (!token) return users;
+  try {
+    const me = await github.json<{ login: string }>(`${API}/user`);
+    return me.login.toLowerCase() === owner.login.toLowerCase() ? `${API}/user/repos?affiliation=owner&` : users;
+  } catch (error) {
+    if (error instanceof RateLimitError) throw error;
+    return users;
+  }
 }
 
 /** Code search looks at the whole default branch, 100 results a page. */
@@ -115,7 +188,7 @@ function client({ fetch, token }: GitHubOptions) {
     const text = typeof message === 'string' ? message : '';
     if (response.status === 404) throw new AtlasError(notFound);
     if ((response.status === 403 || response.status === 429) && /rate limit/i.test(text)) {
-      throw new AtlasError(`GitHub rate limit reached; ${token ? 'try again in a minute' : 'set GITHUB_TOKEN'}`);
+      throw new RateLimitError(`GitHub rate limit reached; ${token ? 'try again in a minute' : 'set GITHUB_TOKEN'}`);
     }
     if (response.status === 401) throw new AtlasError('GitHub rejected the token in GITHUB_TOKEN');
     throw new AtlasError(`GitHub answered ${response.status} for ${url}${text && `: ${text}`}`);
