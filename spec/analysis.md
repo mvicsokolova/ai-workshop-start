@@ -7,7 +7,9 @@ Every `SKILL.md`: **name**, **description**, **link**
 
 ## Architecture
 Core: fetch → find → parse. CLI: a *thin client*.
-Skill: id = `repo:path`, name, description, commit
+Skill: id = `repo:path`, name, description, commit, body, files
+- *body*: the Markdown after the front matter
+- *files*: the other files in the skill's directory, relative to it
 
 ## Details
 - **GitHub API**, no clone; *under 5 s* for intellij-community

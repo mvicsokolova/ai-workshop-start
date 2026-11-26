@@ -39,6 +39,17 @@ async function readSkill(source: Source, file: SkillFile): Promise<{ skill?: Ski
     description: parsed.description,
     commit: source.repository.commit,
     copies: file.copies,
+    body: parsed.body,
+    files: supportingFiles(source.paths, file.path),
   };
   return { skill, warning: parsed.warning && `${file.path}: ${parsed.warning}` };
+}
+
+/** Every other file under the SKILL.md's directory, sorted; the listing may hold only SKILL.md files. */
+function supportingFiles(paths: string[], skillPath: string): string[] {
+  const directory = skillPath.slice(0, skillPath.lastIndexOf('/') + 1);
+  return paths
+    .filter((path) => path.startsWith(directory) && path !== skillPath)
+    .map((path) => path.slice(directory.length))
+    .sort();
 }

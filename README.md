@@ -13,7 +13,27 @@ build-tools-bump-gradle-api — Bumps the Gradle API version that Kotlin Gradle 
 …
 ```
 
-Set `GITHUB_TOKEN` for a higher GitHub rate limit. `npm test` runs the tests.
+## The website
 
-- [spec/](spec/): what it does. [AGENTS.md](AGENTS.md): the definition of done.
+**Hosted:** https://mvicsokolova.github.io/ai-workshop-start/ (JetBrains/intellij-community,
+rebuilt daily by [.github/workflows/pages.yml](.github/workflows/pages.yml)).
+
+Search, filter and read every skill in your browser:
+
+```console
+$ npm run site                      # JetBrains/intellij-community
+$ ./skill-atlas serve <GitHub URL | directory> [--port 4173]
+$ ./skill-atlas export <GitHub URL | directory> site/   # static files, for any host
+JetBrains/intellij-community · 41 skills at http://127.0.0.1:4173/
+```
+
+- **Search** as you type, across names, descriptions and the full text of every SKILL.md
+- **Filter** by topic, owning team (from `OWNERSHIP` files) and contents: scripts, references, …
+- **Read** a skill rendered, with its table of contents, the skills it links to and from, and its files
+- Every view is a shareable URL; press `?` for the keyboard shortcuts
+
+Set `GITHUB_TOKEN` for a higher GitHub rate limit; without it GitHub allows 60 API calls an hour,
+a few scans of a large repository (`GITHUB_TOKEN=$(gh auth token) npm run site`). `npm test` runs the tests.
+
+- [spec/](spec/): what it does; [spec/web.md](spec/web.md): the website. [AGENTS.md](AGENTS.md): the definition of done.
 - [fixture/](fixture/README.md): a small repository for the tests.

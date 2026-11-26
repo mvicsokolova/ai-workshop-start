@@ -27,3 +27,4 @@ jobs:
         run: |
           ./skill-atlas help
           ./skill-atlas scan ./fixture
+          ./skill-atlas export ./fixture "$RUNNER_TEMP/site"
