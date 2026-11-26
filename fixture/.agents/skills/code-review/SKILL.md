@@ -5,7 +5,7 @@ description: "Review a change to Skill Atlas against its spec, tests and archite
 
 # Code review
 
-Review the diff (`git diff main...HEAD`, or the pull request), not the whole repository.
+Review the diff (`gh pr diff <number>` for a pull request, else `git diff origin/main...HEAD`), not the whole repository.
 Report findings ranked by severity: **blocking** (wrong behaviour, broken spec, missing test),
 **should fix** (architecture, error handling, performance), **nit** (naming, comments).
 Each finding: file and line, what is wrong, a concrete input that shows it, a suggested fix.
