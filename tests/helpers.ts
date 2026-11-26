@@ -23,6 +23,22 @@ export const EXAMPLE: Recording = {
     status: 200,
     body: '---\nname: commits\ndescription: Write commit messages the way this repository does. Use for every commit.\n---\n# Commits\n',
   },
+  // The whole tree, for the website: code search finds only the SKILL.md files.
+  [`https://api.github.com/repos/JetBrains/example/git/trees/${EXAMPLE_COMMIT}?recursive=1`]: {
+    status: 200,
+    body: {
+      truncated: false,
+      tree: [
+        { path: '.claude/skills/commits/SKILL.md', mode: '100644', type: 'blob', sha: 'a' },
+        { path: '.claude/skills/commits/OWNERSHIP', mode: '100644', type: 'blob', sha: 'b' },
+        { path: 'README.md', mode: '100644', type: 'blob', sha: 'c' },
+      ],
+    },
+  },
+  [`https://raw.githubusercontent.com/JetBrains/example/${EXAMPLE_COMMIT}/.claude/skills/commits/OWNERSHIP`]: {
+    status: 200,
+    body: "owner 'VCS Team'\n",
+  },
 };
 
 const github = replay(EXAMPLE);

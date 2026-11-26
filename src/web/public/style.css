@@ -128,6 +128,7 @@ mark { background: var(--mark); color: var(--mark-text); border-radius: 3px; pad
 .gradient-text { background: var(--gradient); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .subtitle { margin: 14px auto 28px; color: var(--text-soft); font-size: clamp(15px, 1.8vw, 18px); }
 .subtitle strong { color: var(--text); font-weight: 600; }
+.scanned { color: var(--muted); font-size: .88em; white-space: nowrap; }
 
 .search {
   position: relative; display: flex; align-items: center;

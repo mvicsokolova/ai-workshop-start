@@ -6,6 +6,21 @@
 - A port in use, a bad `--port` → a clear message, exit code 1
 - Listens on *127.0.0.1* only; the scan stays *in memory*, nothing is stored
 - `serve` exists only in the Node CLI; the browser entry says so
+- On GitHub, *every file* through the tree, with a token too: code search finds only SKILL.md files,
+  and the page needs OWNERSHIP and the other files
+
+## Static export
+`./skill-atlas export <GitHub URL | directory> <out directory>`
+- Writes `index.html`, `app.js`, `style.css`, `catalog.json`, `.nojekyll`; prints the repository,
+  the count, the directory and the files; warnings go to *stderr*
+- The same page: the catalog from `catalog.json`, *no rescan*; relative paths, so it works below a
+  path; the Content-Security-Policy is in the page
+- Wrong arguments, an unreadable repository → a clear message, exit code 1; only in the Node CLI
+
+## Hosting
+`.github/workflows/pages.yml` exports JetBrains/intellij-community on every push to main, *daily*,
+and on demand, and publishes it as the `gh-pages` branch, which GitHub Pages serves:
+https://mvicsokolova.github.io/ai-workshop-start/
 
 ## HTTP
 - `GET /`: the page; `/app.js`, `/style.css`: its code; no other files
@@ -14,7 +29,8 @@
 - Anything else → *404* `{ error }`
 
 ## Catalog
-Repository, skills (sorted by name), warnings, owner and topic *facets* with counts, scan time.
+Repository, skills (sorted by name), warnings, owner and topic *facets* with counts, scan time
+(shown on the page).
 Per skill, besides the scan: link, directory, copies and files *with links*, owners, topics, html,
 headings, links, linkedFrom, text, words.
 - **Owners**: the `owner '<team>'` lines of the skill's `OWNERSHIP` file; `"…"` or no quotes too

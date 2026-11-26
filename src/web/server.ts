@@ -18,7 +18,8 @@ export type ServeOptions = {
 
 export type RunningServer = { url: string; catalog(): Catalog; close(): Promise<void> };
 
-const PUBLIC = new URL('./public/', import.meta.url);
+/** The page and its code. */
+export const PUBLIC = new URL('./public/', import.meta.url);
 const ASSETS: Record<string, { file: string; type: string }> = {
   '/': { file: 'index.html', type: 'text/html; charset=utf-8' },
   '/app.js': { file: 'app.js', type: 'text/javascript; charset=utf-8' },

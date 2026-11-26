@@ -26,6 +26,10 @@ const CONTENTS = [
   { id: 'owned', label: 'Has an owning team', test: (s) => s.owners.length > 0 },
 ];
 
+/** A static export names its catalog file; the server answers it at api/catalog and can scan again. */
+const CATALOG = document.querySelector('meta[name="skill-atlas-catalog"]')?.content ?? 'api/catalog';
+const STATIC = CATALOG !== 'api/catalog';
+
 let catalog;
 let skills = [];
 let visible = [];
@@ -37,7 +41,7 @@ let lastRenderedSkill = '';
 
 async function load() {
   try {
-    const response = await fetch('/api/catalog');
+    const response = await fetch(CATALOG);
     if (!response.ok) throw new Error(`the server answered ${response.status}`);
     useCatalog(await response.json());
   } catch (error) {
@@ -242,7 +246,13 @@ function renderHeader() {
   document.title = `${repository.id} · Skill Atlas`;
   const files = skills.reduce((n, s) => n + s.extraFiles.length, 0);
   const words = skills.reduce((n, s) => n + s.words, 0);
-  els.subtitle.innerHTML = `Search, filter and read the agent skills of <strong>${escape(repository.id)}</strong>.`;
+  const scanned = new Date(catalog.scannedAt);
+  const when = Number.isNaN(scanned.getTime())
+    ? ''
+    : ` <span class="scanned" title="${escape(scanned.toString())}">Scanned ${escape(
+        scanned.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }),
+      )}.</span>`;
+  els.subtitle.innerHTML = `Search, filter and read the agent skills of <strong>${escape(repository.id)}</strong>.${when}`;
   const stats = [
     [skills.length, skills.length === 1 ? 'skill' : 'skills'],
     [catalog.owners.length, catalog.owners.length === 1 ? 'team' : 'teams'],
@@ -725,7 +735,7 @@ els.rescan.addEventListener('click', async () => {
   els.rescan.classList.add('spinning');
   els.rescan.disabled = true;
   try {
-    const response = await fetch('/api/rescan', { method: 'POST' });
+    const response = await fetch('api/rescan', { method: 'POST' });
     const body = await response.json();
     if (!response.ok) throw new Error(body.error ?? `the server answered ${response.status}`);
     const before = catalog.repository.commit;
@@ -808,4 +818,5 @@ try {
   setTheme('dark');
 }
 
+els.rescan.hidden = STATIC;
 load();

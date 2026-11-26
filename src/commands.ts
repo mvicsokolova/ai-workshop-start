@@ -12,6 +12,8 @@ export type Context = {
   error(text: string): void;
   /** Serves the catalog as a website until stopped; only where a server can run, in Node. */
   serve?(input: string, port: number): Promise<void>;
+  /** Writes the website as static files into the directory; only in Node. */
+  export?(input: string, directory: string): Promise<void>;
 };
 
 export const DEFAULT_PORT = 4173;
@@ -20,6 +22,8 @@ const usage = `Usage: skill-atlas <command>
 
   scan <GitHub URL | directory>   find every SKILL.md in a repository and print it
   serve <GitHub URL | directory>  browse them in a local website  [--port <n>, default ${DEFAULT_PORT}]
+  export <GitHub URL | directory> <out directory>
+                                  the website as static files, for GitHub Pages or any host
   help                            show this help`;
 
 /** Runs one command; returns its exit code. */
@@ -28,6 +32,7 @@ export async function run(args: string[], context: Context): Promise<number> {
   try {
     if (command === 'scan') await scanCommand(rest, context);
     else if (command === 'serve') await serveCommand(rest, context);
+    else if (command === 'export') await exportCommand(rest, context);
     else if (command === 'help') context.print(usage);
     else throw new AtlasError(`Unknown command: ${command}\n\n${usage}`);
     return 0;
@@ -63,6 +68,16 @@ async function serveCommand(args: string[], context: Context) {
   if (inputs.length !== 1) throw new AtlasError(serveUsage);
   if (!context.serve) throw new AtlasError('serve runs only in the command line: ./skill-atlas serve <GitHub URL | directory>');
   await context.serve(inputs[0], port);
+}
+
+async function exportCommand(args: string[], context: Context) {
+  if (args.length !== 2 || args.some((arg) => arg.startsWith('--'))) {
+    throw new AtlasError('Usage: skill-atlas export <GitHub URL | directory> <out directory>');
+  }
+  if (!context.export) {
+    throw new AtlasError('export runs only in the command line: ./skill-atlas export <GitHub URL | directory> <out directory>');
+  }
+  await context.export(args[0], args[1]);
 }
 
 /** `<owner>/<repo> · N skills`, then each skill's name, first sentence and link. */

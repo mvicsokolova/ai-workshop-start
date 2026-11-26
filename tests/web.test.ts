@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:net';
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -94,12 +94,15 @@ test('serve: a link to another skill opens it in the page, both ways; a link to 
 test('serve: on GitHub, links pin the scanned commit; relative links stay in the repository', async (t) => {
   const server = await startServer({
     input: 'github.com/JetBrains/example',
-    open: (input) => openGitHub(input, { fetch: replay(EXAMPLE), token: 'test' }),
+    open: (input) => openGitHub(input, { fetch: replay(EXAMPLE), token: 'test', everyFile: true }),
     port: 0,
   });
   t.after(() => server.close());
   const catalog = (await (await fetch(`${server.url}api/catalog`)).json()) as Catalog;
   assert.equal(catalog.repository.id, 'JetBrains/example');
+  // With a token too, every file through the tree: the OWNERSHIP file is found.
+  assert.deepEqual(catalog.skills[0].owners, ['VCS Team']);
+  assert.deepEqual(catalog.skills[0].files.map((f) => f.path), ['OWNERSHIP']);
   assert.equal(
     catalog.skills[0].link,
     `https://github.com/JetBrains/example/blob/${EXAMPLE_COMMIT}/.claude/skills/commits/SKILL.md`,
@@ -165,7 +168,7 @@ test('serve: the page and its code, a strict Content-Security-Policy, 404 for an
   assert.equal(page.headers.get('content-type'), 'text/html; charset=utf-8');
   assert.match(page.headers.get('content-security-policy') ?? '', /script-src 'self'/);
   const html = await page.text();
-  assert.match(html, /<script type="module" src="\/app\.js"><\/script>/);
+  assert.match(html, /<script type="module" src="app\.js"><\/script>/);
   assert.match(html, /<input id="query" type="search"/);
   for (const [path, type] of [
     ['app.js', 'text/javascript; charset=utf-8'],
@@ -266,4 +269,43 @@ test('serve exists only in the Node CLI; the browser entry says so', async () =>
     'serve runs only in the command line: ./skill-atlas serve <GitHub URL | directory>',
   );
   assert.match(await browser.run('help'), /serve <GitHub URL \| directory>  browse them in a local website/);
+});
+
+test('export: the website as static files, with the catalog and the policy in the page', async (t) => {
+  const out = mkdtempSync(join(tmpdir(), 'skill-atlas-site-'));
+  t.after(() => rmSync(out, { recursive: true, force: true }));
+  const exported = spawnSync(process.execPath, [CLI, 'export', FIXTURE, join(out, 'site')], { encoding: 'utf8' });
+  assert.equal(exported.status, 0, exported.stderr);
+  assert.equal(
+    exported.stdout,
+    `fixture · 4 skills → ${join(out, 'site')}\n  index.html, app.js, style.css, catalog.json, .nojekyll\n`,
+  );
+  assert.match(exported.stderr, /^warning: \.agents\/skills\/release-checklist\/SKILL\.md: malformed front matter: /);
+  const site = join(out, 'site');
+  assert.deepEqual(readdirSync(site).sort(), ['.nojekyll', 'app.js', 'catalog.json', 'index.html', 'style.css']);
+  const page = readFileSync(join(site, 'index.html'), 'utf8');
+  assert.match(page, /<meta name="skill-atlas-catalog" content="catalog\.json">/);
+  assert.match(page, /<meta http-equiv="Content-Security-Policy" content="default-src 'self';[^"]*script-src 'self'">/);
+  // Relative paths: the site works below a path, as on GitHub Pages.
+  assert.match(page, /<link rel="stylesheet" href="style\.css">/);
+  assert.match(page, /<script type="module" src="app\.js"><\/script>/);
+  assert.equal(readFileSync(join(site, 'app.js'), 'utf8'), readFileSync(new URL('../src/web/public/app.js', import.meta.url), 'utf8'));
+  const catalog = JSON.parse(readFileSync(join(site, 'catalog.json'), 'utf8')) as Catalog;
+  assert.deepEqual(catalog.skills.map((s) => s.name), ['code-style', 'commits', 'release-checklist', 'triage']);
+  assert.deepEqual(catalog.owners.map((o) => o.name), ['Issue Wranglers', 'Release Team']);
+});
+
+test('export: wrong arguments or an unreadable repository → a clear message, exit code 1', async () => {
+  for (const args of [[], [FIXTURE], [FIXTURE, 'a', 'b'], [FIXTURE, '--out']]) {
+    const bad = await atlas(['export', ...args]);
+    assert.equal(bad.code, 1, args.join(' '));
+    assert.equal(bad.stderr, 'Usage: skill-atlas export <GitHub URL | directory> <out directory>');
+  }
+  const missing = spawnSync(process.execPath, [CLI, 'export', join(FIXTURE, 'no-such-directory'), join(tmpdir(), 'unused')], {
+    encoding: 'utf8',
+  });
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, /^Not a GitHub URL or a readable directory: .*no-such-directory\n$/);
+  const browser = createBrowserBackend({ fetch: replay({}) });
+  assert.match(await browser.run('export github.com/JetBrains/example site'), /^export runs only in the command line/);
 });

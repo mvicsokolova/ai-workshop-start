@@ -15,11 +15,15 @@ build-tools-bump-gradle-api — Bumps the Gradle API version that Kotlin Gradle 
 
 ## The website
 
+**Hosted:** https://mvicsokolova.github.io/ai-workshop-start/ (JetBrains/intellij-community,
+rebuilt daily by [.github/workflows/pages.yml](.github/workflows/pages.yml)).
+
 Search, filter and read every skill in your browser:
 
 ```console
 $ npm run site                      # JetBrains/intellij-community
 $ ./skill-atlas serve <GitHub URL | directory> [--port 4173]
+$ ./skill-atlas export <GitHub URL | directory> site/   # static files, for any host
 JetBrains/intellij-community · 41 skills at http://127.0.0.1:4173/
 ```
 
