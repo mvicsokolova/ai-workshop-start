@@ -95,3 +95,14 @@ test('rate limit → a message that asks for GITHUB_TOKEN', async () => {
     message: 'GitHub rate limit reached; set GITHUB_TOKEN',
   });
 });
+
+test("each skill keeps its body and the other files in its directory", async () => {
+  const { scan } = await import('../src/core/scan.ts');
+  const { openDirectory } = await import('../src/local.ts');
+  const result = await scan(await openDirectory(FIXTURE));
+  const triage = result.skills.find((skill) => skill.name === 'triage');
+  assert.deepEqual(triage?.files, ['OWNERSHIP', 'references/labels.md']);
+  assert.match(triage?.body ?? '', /^# Triage\n\nLabel the issue first;/);
+  const commits = result.skills.find((skill) => skill.name === 'commits');
+  assert.deepEqual(commits?.files, ['examples/SKILL.md']);
+});

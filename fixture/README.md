@@ -7,7 +7,7 @@ A small repository for the tests.
 | `.claude/skills/commits` | a skill |
 | `.github/skills/code-style` | a skill in another agent's folder |
 | `.agents/skills/release-checklist` | malformed front matter |
-| `agent/skills/triage` | a skill in the fourth root |
+| `agent/skills/triage` | a skill in the fourth root, with an OWNERSHIP file, a reference, a link to another skill, raw HTML and a `javascript:` link |
 | `.github/skills/commits` | the same name in two roots: a copy of `.claude/skills/commits` |
 | `.claude/skills/commits/examples/SKILL.md` | not a skill: deeper than `<root>/<name>/SKILL.md` |
 | `.claude/skills/SKILL.md` | not a skill: directly in a root |

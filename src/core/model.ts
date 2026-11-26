@@ -22,6 +22,10 @@ export type Skill = {
   commit: string;
   /** The same skill in other agents' folders. */
   copies: string[];
+  /** The Markdown after the front matter. */
+  body: string;
+  /** The other files in the skill's directory, relative to it: references, scripts. */
+  files: string[];
 };
 
 /**

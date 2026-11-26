@@ -10,11 +10,16 @@ export type Context = {
   print(text: string): void;
   /** Errors and warnings. */
   error(text: string): void;
+  /** Serves the catalog as a website until stopped; only where a server can run, in Node. */
+  serve?(input: string, port: number): Promise<void>;
 };
+
+export const DEFAULT_PORT = 4173;
 
 const usage = `Usage: skill-atlas <command>
 
   scan <GitHub URL | directory>   find every SKILL.md in a repository and print it
+  serve <GitHub URL | directory>  browse them in a local website  [--port <n>, default ${DEFAULT_PORT}]
   help                            show this help`;
 
 /** Runs one command; returns its exit code. */
@@ -22,6 +27,7 @@ export async function run(args: string[], context: Context): Promise<number> {
   const [command = 'help', ...rest] = args;
   try {
     if (command === 'scan') await scanCommand(rest, context);
+    else if (command === 'serve') await serveCommand(rest, context);
     else if (command === 'help') context.print(usage);
     else throw new AtlasError(`Unknown command: ${command}\n\n${usage}`);
     return 0;
@@ -37,6 +43,26 @@ async function scanCommand(args: string[], context: Context) {
   const result = await scan(await context.open(args[0]));
   printRepository(result.repository, result.skills, context);
   for (const warning of result.warnings) context.error(`warning: ${warning}`);
+}
+
+const serveUsage = 'Usage: skill-atlas serve <GitHub URL | directory> [--port <n>]';
+
+async function serveCommand(args: string[], context: Context) {
+  let port = DEFAULT_PORT;
+  const inputs: string[] = [];
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index];
+    const value = arg === '--port' ? args[++index] : arg.startsWith('--port=') ? arg.slice('--port='.length) : undefined;
+    if (value !== undefined) {
+      if (!/^\d+$/.test(value) || Number(value) > 65535) throw new AtlasError(`Not a port: ${value}\n${serveUsage}`);
+      port = Number(value);
+    } else if (arg === '--port') throw new AtlasError(`--port needs a number\n${serveUsage}`);
+    else if (arg.startsWith('--')) throw new AtlasError(`Unknown option: ${arg}\n${serveUsage}`);
+    else inputs.push(arg);
+  }
+  if (inputs.length !== 1) throw new AtlasError(serveUsage);
+  if (!context.serve) throw new AtlasError('serve runs only in the command line: ./skill-atlas serve <GitHub URL | directory>');
+  await context.serve(inputs[0], port);
 }
 
 /** `<owner>/<repo> · N skills`, then each skill's name, first sentence and link. */
