@@ -1,4 +1,4 @@
-// The Skill Atlas page: search, filter and read the skills of one repository.
+// The Skill Atlas page: search, filter and read the skills of one repository; on the server, scan another one.
 // The state lives in the URL hash, so every view can be shared, bookmarked and navigated with Back.
 
 const $ = (id) => document.getElementById(id);
@@ -14,6 +14,8 @@ const els = {
   prev: $('prev'), next: $('next'), close: $('close'),
   detailName: $('detail-name'), detailDescription: $('detail-description'), detailTags: $('detail-tags'),
   detailActions: $('detail-actions'), toc: $('toc'), markdown: $('markdown'), detailFiles: $('detail-files'),
+  repoForm: $('repo-form'), repoInput: $('repo-input'), repoScan: $('repo-scan'), repoStatus: $('repo-status'),
+  emptyTitle: $('empty-title'), emptyHint: $('empty-hint'), emptyNone: $('empty-none'),
   rescan: $('rescan'), theme: $('theme'), help: $('help'), shortcuts: $('shortcuts'), toast: $('toast'),
 };
 
@@ -34,7 +36,7 @@ let catalog;
 let skills = [];
 let visible = [];
 let selected = 0;
-let state = { q: '', topic: [], owner: [], has: [], sort: 'relevance', view: 'grid', skill: '' };
+let state = { repo: '', q: '', topic: [], owner: [], has: [], sort: 'relevance', view: 'grid', skill: '' };
 let lastRenderedSkill = '';
 
 // ---------- Loading ----------
@@ -47,7 +49,9 @@ async function load() {
   } catch (error) {
     els.subtitle.textContent = `Could not load the catalog: ${error.message}`;
     els.subtitle.classList.add('error-text');
+    return;
   }
+  followRepo();
 }
 
 function useCatalog(next) {
@@ -76,6 +80,7 @@ function readHash() {
   const params = new URLSearchParams(location.hash.replace(/^#\/?/, ''));
   const list = (key) => (params.get(key) ?? '').split(',').filter(Boolean);
   state = {
+    repo: params.get('repo') ?? '',
     q: params.get('q') ?? '',
     topic: list('topic'),
     owner: list('owner'),
@@ -89,16 +94,20 @@ function readHash() {
 
 function writeHash({ push = false } = {}) {
   const params = new URLSearchParams();
+  if (state.repo) params.set('repo', state.repo);
   if (state.q) params.set('q', state.q);
   for (const key of ['topic', 'owner', 'has']) if (state[key].length) params.set(key, state[key].join(','));
   if (state.sort !== 'relevance') params.set('sort', state.sort);
   if (state.view !== 'grid') params.set('view', state.view);
   if (state.skill) params.set('skill', state.skill);
-  const hash = `#/${params.toString() ? `?${params}` : ''}`;
+  const hash = hashOf(params);
   if (hash === location.hash) return;
   if (push) history.pushState(null, '', hash);
   else history.replaceState(null, '', hash);
 }
+
+/** `/` may stay as it is in a URL's fragment: `?repo=owner/repo`. */
+const hashOf = (params) => `#/${params.toString() ? `?${params.toString().replaceAll('%2F', '/')}` : ''}`;
 
 function update(changes, options) {
   state = { ...state, ...changes };
@@ -109,10 +118,87 @@ function update(changes, options) {
 window.addEventListener('hashchange', () => {
   readHash();
   render();
+  followRepo();
 });
 window.addEventListener('popstate', () => {
   readHash();
   render();
+  followRepo();
+});
+
+// ---------- Repository ----------
+// On the server, the page can scan any GitHub repository; the one shown is `repo` in the URL.
+
+let scanning = false;
+
+/** The GitHub repository shown, `owner/repo`; '' for a local directory. */
+const shownRepo = () => (catalog?.repository.url.startsWith('https://github.com/') ? catalog.repository.id : '');
+const sameRepo = (a, b) => a.toLowerCase() === b.toLowerCase();
+
+/** Scans the repository in the URL when it is not the one shown; puts the shown one there when it has none. */
+function followRepo() {
+  if (STATIC || !catalog || scanning) return;
+  const shown = shownRepo();
+  if (!state.repo) {
+    if (shown) (state.repo = shown), writeHash();
+  } else if (!sameRepo(state.repo, shown)) scanRepository(state.repo);
+}
+
+/**
+ * Asks the server to scan a GitHub repository, which becomes the current one. From the field, it
+ * opens a new entry in the history, without the search and filters of the old repository; from the
+ * URL, the rest of the URL stays.
+ */
+async function scanRepository(repo, { fromField = false } = {}) {
+  scanning = true;
+  setScanning(`Scanning ${repo}…`);
+  try {
+    const response = await fetch('api/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: repo }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error ?? `the server answered ${response.status}`);
+    const id = body.repository.id;
+    if (fromField) {
+      const hash = hashOf(new URLSearchParams({ repo: id }));
+      if (sameRepo(id, shownRepo())) history.replaceState(null, '', hash);
+      else history.pushState(null, '', hash);
+    }
+    useCatalog(body);
+    if (sameRepo(state.repo, repo) && state.repo !== id) (state.repo = id), writeHash();
+    setScanning();
+    els.repoInput.value = '';
+  } catch (error) {
+    setScanning(`Could not scan ${repo}: ${error.message}`, true);
+    if (fromField) els.repoInput.value = repo;
+    // The URL shows the repository that is still there.
+    else if (sameRepo(state.repo, repo)) (els.repoInput.value = repo), (state.repo = shownRepo()), writeHash();
+  } finally {
+    scanning = false;
+  }
+  // The URL may have moved on while the scan ran.
+  followRepo();
+}
+
+/** Progress while a scan runs, the error after one failed, nothing otherwise. */
+function setScanning(message = '', failed = false) {
+  const busy = Boolean(message) && !failed;
+  els.repoInput.disabled = busy;
+  els.repoScan.disabled = busy;
+  els.rescan.disabled = busy;
+  els.repoScan.textContent = busy ? 'Scanning…' : 'Scan';
+  els.repoForm.setAttribute('aria-busy', String(busy));
+  els.repoStatus.hidden = !message;
+  els.repoStatus.textContent = message;
+  els.repoStatus.classList.toggle('error-text', failed);
+}
+
+els.repoForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  const repo = els.repoInput.value.trim();
+  if (repo && !scanning) scanRepository(repo, { fromField: true });
 });
 
 // ---------- Search ----------
@@ -360,6 +446,11 @@ function render() {
     })
     .join('');
   els.empty.hidden = results.length > 0;
+  // A repository without skills is not a search that found nothing.
+  const none = skills.length === 0;
+  els.emptyTitle.textContent = none ? 'No skills in this repository' : 'No skill matches';
+  els.emptyHint.hidden = none;
+  els.emptyNone.hidden = !none;
 
   renderDetail(pattern);
 }
@@ -731,22 +822,35 @@ els.detail.addEventListener('click', (event) => {
   }
 });
 
+// Rescans the repository on this page. The server's current one may be another: another tab may have
+// scanned it. So a GitHub repository is scanned by name; only a local directory uses api/rescan.
 els.rescan.addEventListener('click', async () => {
+  if (scanning) return;
+  scanning = true;
   els.rescan.classList.add('spinning');
   els.rescan.disabled = true;
+  const shown = shownRepo();
   try {
-    const response = await fetch('api/rescan', { method: 'POST' });
-    const body = await response.json();
+    const response = await fetch(shown ? 'api/scan' : 'api/rescan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: shown ? JSON.stringify({ url: shown }) : undefined,
+    });
+    const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.error ?? `the server answered ${response.status}`);
     const before = catalog.repository.commit;
     useCatalog(body);
+    setScanning();
     toast(before && before !== body.repository.commit ? `Updated to ${body.repository.commit.slice(0, 7)}` : 'Scanned again: up to date');
   } catch (error) {
     toast(`Scan failed: ${error.message}`);
   } finally {
+    scanning = false;
     els.rescan.classList.remove('spinning');
     els.rescan.disabled = false;
   }
+  // The URL names the repository shown, or moved on while the scan ran.
+  followRepo();
 });
 
 els.theme.addEventListener('click', () => setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'));
@@ -819,4 +923,6 @@ try {
 }
 
 els.rescan.hidden = STATIC;
+// The static export has no server to scan with.
+els.repoForm.hidden = STATIC;
 load();

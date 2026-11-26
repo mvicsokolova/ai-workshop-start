@@ -2,6 +2,7 @@
 // repository answered in tests/helpers.ts.
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
+import { request as httpRequest } from 'node:http';
 import { createServer } from 'node:net';
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -10,12 +11,12 @@ import { pathToFileURL } from 'node:url';
 import { test } from 'node:test';
 import { createBrowserBackend } from '../src/browser.ts';
 import { AtlasError } from '../src/core/errors.ts';
-import { openGitHub } from '../src/core/github.ts';
+import { openGitHub, parseGitHubUrl } from '../src/core/github.ts';
 import { replay } from '../src/core/replay.ts';
 import { openDirectory } from '../src/local.ts';
 import { parseOwners, renderMarkdown, type Catalog, type CatalogSkill } from '../src/web/catalog.ts';
-import { startServer } from '../src/web/server.ts';
-import { atlas, CLI, EXAMPLE, EXAMPLE_COMMIT, FIXTURE } from './helpers.ts';
+import { parseRepository, startServer } from '../src/web/server.ts';
+import { atlas, CLI, EMPTY, EXAMPLE, EXAMPLE_COMMIT, FIXTURE, MISSING } from './helpers.ts';
 
 const ROOT = pathToFileURL(FIXTURE).href;
 
@@ -32,7 +33,7 @@ test('serve: the catalog of ./fixture, sorted by name, with owner facets from OW
   assert.equal(catalog.repository.id, 'fixture');
   assert.deepEqual(
     catalog.skills.map((s) => s.name),
-    ['code-style', 'commits', 'release-checklist', 'triage'],
+    ['code-review', 'code-style', 'commits', 'release-checklist', 'triage'],
   );
   assert.deepEqual(skill('triage').owners, ['Issue Wranglers', 'Release Team']);
   assert.deepEqual(catalog.owners, [
@@ -201,7 +202,7 @@ test('serve: rescan answers the new catalog; a failed rescan is a 502 and keeps 
   const first = server.catalog().scannedAt;
   const rescanned = await fetch(`${server.url}api/rescan`, { method: 'POST' });
   assert.equal(rescanned.status, 200);
-  assert.equal(((await rescanned.json()) as Catalog).skills.length, 4);
+  assert.equal(((await rescanned.json()) as Catalog).skills.length, 5);
   assert.equal(scans, 2);
   const kept = server.catalog().scannedAt;
   assert.ok(kept >= first);
@@ -210,6 +211,243 @@ test('serve: rescan answers the new catalog; a failed rescan is a 502 and keeps 
   assert.equal(failed.status, 502);
   assert.deepEqual(await failed.json(), { error: 'Cannot reach GitHub: offline' });
   assert.equal(server.catalog().scannedAt, kept);
+});
+
+/** A server for ./fixture that can scan JetBrains/example, JetBrains/empty and JetBrains/missing. */
+async function serveScanning(t: { after(fn: () => Promise<void>): void }, gate?: (input: string) => Promise<void>) {
+  const github = replay({ ...EXAMPLE, ...EMPTY, ...MISSING });
+  const opened: string[] = [];
+  const server = await startServer({
+    input: FIXTURE,
+    open: async (input) => {
+      opened.push(input);
+      await gate?.(input);
+      return parseGitHubUrl(input) ? openGitHub(input, { fetch: github, token: 'test', everyFile: true }) : openDirectory(input);
+    },
+    port: 0,
+  });
+  t.after(() => server.close());
+  const post = async (path: string, body?: unknown, raw?: string) => {
+    const response = await fetch(`${server.url}api/${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: raw ?? (body === undefined ? undefined : JSON.stringify(body)),
+    });
+    return { status: response.status, body: (await response.json()) as Catalog & { error?: string } };
+  };
+  const current = async () => (await (await fetch(`${server.url}api/catalog`)).json()) as Catalog;
+  return { server, opened, post, current };
+}
+
+test('scan: owner/repo or a GitHub URL answers the new catalog, which becomes the current one', async (t) => {
+  const { opened, post, current } = await serveScanning(t);
+  for (const url of ['JetBrains/example', 'https://github.com/JetBrains/example']) {
+    const scanned = await post('scan', { url });
+    assert.equal(scanned.status, 200, url);
+    assert.equal(scanned.body.repository.id, 'JetBrains/example');
+    assert.deepEqual(scanned.body.skills.map((s) => s.name), ['commits']);
+    assert.deepEqual(scanned.body.skills[0].owners, ['VCS Team']);
+    assert.deepEqual(await current(), scanned.body);
+  }
+  // Both are opened as the same GitHub URL.
+  assert.deepEqual(opened.slice(1), ['https://github.com/JetBrains/example', 'https://github.com/JetBrains/example']);
+});
+
+test('scan: the field accepts GitHub repositories only, never a local path', () => {
+  for (const input of ['JetBrains/example', ' JetBrains/example.git ', 'https://github.com/JetBrains/example', 'github.com/JetBrains/example/', 'a-b/c.d_e']) {
+    assert.ok(parseRepository(input), input);
+  }
+  for (const input of ['./fixture', '../fixture', FIXTURE, 'fixture', '~/code/repo', 'C:\\code\\repo', 'https://gitlab.com/a/b', 'https://github.com/a', 'a/b/c', '-a/b', 'a/..', '']) {
+    assert.equal(parseRepository(input), undefined, input);
+  }
+});
+
+const USAGE = 'Send { "url": "owner/repo" } or { "url": "https://github.com/owner/repo" }';
+
+test('scan: a local path, any other string, no url or a body that is not JSON → 400, nothing is scanned', async (t) => {
+  const { server, opened, post, current } = await serveScanning(t);
+  const before = await current();
+  const cases: [unknown, string | undefined, string][] = [
+    [{ url: './fixture' }, undefined, `Not a GitHub repository: ./fixture. ${USAGE}`],
+    [{ url: FIXTURE }, undefined, `Not a GitHub repository: ${FIXTURE}. ${USAGE}`],
+    [{ url: 'not a repository' }, undefined, `Not a GitHub repository: not a repository. ${USAGE}`],
+    [{ url: 'https://gitlab.com/JetBrains/example' }, undefined, `Not a GitHub repository: https://gitlab.com/JetBrains/example. ${USAGE}`],
+    [{}, undefined, `No repository URL. ${USAGE}`],
+    [{ url: 42 }, undefined, `No repository URL. ${USAGE}`],
+    [undefined, 'null', `No repository URL. ${USAGE}`],
+    [undefined, 'JetBrains/example', `The request is not JSON. ${USAGE}`],
+    [undefined, '', `The request is not JSON. ${USAGE}`],
+    [undefined, JSON.stringify({ url: 'a/b'.padEnd(5000, 'c') }), `The request is too large. ${USAGE}`],
+    // 4 KB is counted in bytes: 2100 characters of 2 bytes each are too large.
+    [undefined, JSON.stringify({ url: 'a/'.padEnd(2100, 'é') }), `The request is too large. ${USAGE}`],
+  ];
+  for (const [body, raw, error] of cases) {
+    const answer = await post('scan', body, raw);
+    assert.equal(answer.status, 400, raw ?? JSON.stringify(body));
+    assert.deepEqual(answer.body, { error }, raw ?? JSON.stringify(body));
+  }
+  assert.deepEqual(opened, [FIXTURE]);
+  assert.deepEqual(await current(), before);
+  // Only POST.
+  assert.equal((await fetch(`${server.url}api/scan`)).status, 404);
+});
+
+test('scan: the body is read as UTF-8, even with a character split across two chunks', async (t) => {
+  const { server, opened } = await serveScanning(t);
+  const bytes = Buffer.from(JSON.stringify({ url: 'ü/репо' }));
+  const split = bytes.indexOf(Buffer.from('ü')) + 1; // inside the two bytes of ü
+  const answer = await new Promise<{ status: number; body: unknown }>((resolve, reject) => {
+    const request = httpRequest(`${server.url}api/scan`, { method: 'POST', headers: { 'Content-Type': 'application/json' } }, (response) => {
+      let text = '';
+      response.setEncoding('utf8');
+      response.on('data', (chunk) => (text += chunk));
+      response.on('end', () => resolve({ status: response.statusCode ?? 0, body: JSON.parse(text) }));
+    });
+    request.on('error', reject);
+    request.write(bytes.subarray(0, split));
+    setTimeout(() => request.end(bytes.subarray(split)), 50);
+  });
+  assert.deepEqual(answer, { status: 400, body: { error: `Not a GitHub repository: ü/репо. ${USAGE}` } });
+  assert.deepEqual(opened, [FIXTURE]);
+});
+
+test('scan: only the page itself may scan; another site gets 403 or 415, nothing is scanned', async (t) => {
+  const { server, opened, current } = await serveScanning(t);
+  const before = await current();
+  const { port } = new URL(server.url);
+  const send = async (path: string, headers: Record<string, string>, body?: string) => {
+    const response = await fetch(`${server.url}api/${path}`, { method: 'POST', headers, body });
+    return { status: response.status, body: await response.json() };
+  };
+  const repo = JSON.stringify({ url: 'JetBrains/empty' });
+  // A "simple" cross-origin request, which a browser sends without a preflight.
+  for (const type of ['text/plain', 'text/plain;charset=UTF-8', 'application/x-www-form-urlencoded', 'multipart/form-data; boundary=x']) {
+    assert.deepEqual(await send('scan', { 'Content-Type': type }, repo), {
+      status: 415,
+      body: { error: `The request must be Content-Type: application/json. ${USAGE}` },
+    });
+  }
+  assert.deepEqual(await send('scan', {}, repo), {
+    status: 415,
+    body: { error: `The request must be Content-Type: application/json. ${USAGE}` },
+  });
+  for (const origin of ['https://evil.example', `http://evil.example:${port}`, 'null']) {
+    const error = { error: `Only this page can scan; not ${origin}` };
+    assert.deepEqual(await send('scan', { 'Content-Type': 'application/json', Origin: origin }, repo), { status: 403, body: error });
+    assert.deepEqual(await send('scan', { 'Content-Type': 'text/plain', Origin: origin }, repo), { status: 403, body: error });
+    assert.deepEqual(await send('rescan', { Origin: origin }), { status: 403, body: error });
+  }
+  assert.deepEqual(opened, [FIXTURE]);
+  assert.deepEqual(await current(), before);
+
+  // The page's own origin, by either name, and a request without Origin may scan.
+  const json = { 'Content-Type': 'application/json; charset=utf-8' };
+  assert.equal((await send('scan', { ...json, Origin: new URL(server.url).origin }, repo)).status, 200);
+  assert.equal((await send('scan', { ...json, Origin: `http://localhost:${port}` }, JSON.stringify({ url: 'JetBrains/example' }))).status, 200);
+  assert.equal((await send('rescan', { Origin: `http://127.0.0.1:${port}` })).status, 200);
+  assert.equal((await send('scan', { 'Content-Type': 'APPLICATION/JSON' }, repo)).status, 200);
+  assert.deepEqual(opened, [FIXTURE, 'https://github.com/JetBrains/empty', 'https://github.com/JetBrains/example', 'https://github.com/JetBrains/example', 'https://github.com/JetBrains/empty']);
+});
+
+test('scan: an unknown or unreachable repository → 502, the previous catalog stays', async (t) => {
+  const { post, current } = await serveScanning(t);
+  const before = await current();
+  const missing = await post('scan', { url: 'JetBrains/missing' });
+  assert.equal(missing.status, 502);
+  assert.deepEqual(missing.body, { error: 'Repository not found: https://github.com/JetBrains/missing' });
+  assert.deepEqual(await current(), before);
+});
+
+test('scan: a repository without skills is a valid, empty catalog', async (t) => {
+  const { post, current } = await serveScanning(t);
+  const empty = await post('scan', { url: 'https://github.com/JetBrains/empty' });
+  assert.equal(empty.status, 200);
+  assert.equal(empty.body.repository.id, 'JetBrains/empty');
+  assert.deepEqual(empty.body.skills, []);
+  assert.deepEqual(empty.body.owners, []);
+  assert.deepEqual(empty.body.topics, []);
+  assert.deepEqual(empty.body.warnings, []);
+  assert.equal((await current()).repository.id, 'JetBrains/empty');
+});
+
+test('rescan: scans the current repository, the last one scanned successfully', async (t) => {
+  const { opened, post } = await serveScanning(t);
+  assert.equal((await post('scan', { url: 'JetBrains/example' })).status, 200);
+  const rescanned = await post('rescan');
+  assert.equal(rescanned.status, 200);
+  assert.equal(rescanned.body.repository.id, 'JetBrains/example');
+  assert.equal(opened.at(-1), 'https://github.com/JetBrains/example');
+
+  assert.equal((await post('scan', { url: 'JetBrains/missing' })).status, 502);
+  const again = await post('rescan');
+  assert.equal(again.status, 200);
+  assert.equal(again.body.repository.id, 'JetBrains/example');
+  assert.deepEqual(opened.slice(1), [
+    'https://github.com/JetBrains/example',
+    'https://github.com/JetBrains/example',
+    'https://github.com/JetBrains/missing',
+    'https://github.com/JetBrains/example',
+  ]);
+});
+
+test('scan: one scan at a time; a second scan or rescan while one runs → 409, the first still finishes', { timeout: 10_000 }, async (t) => {
+  // Opening JetBrains/example waits until the test releases it.
+  let release!: () => void;
+  let started!: () => void;
+  const nextStart = () => new Promise<void>((resolve) => (started = resolve));
+  let running = nextStart();
+  const { post, current } = await serveScanning(t, (input) => {
+    if (!input.endsWith('/JetBrains/example')) return Promise.resolve();
+    started();
+    return new Promise<void>((resolve) => (release = resolve));
+  });
+  const first = post('scan', { url: 'JetBrains/example' });
+  await running;
+  for (const [path, body] of [['scan', { url: 'JetBrains/empty' }], ['rescan', undefined]] as const) {
+    const busy = await post(path, body);
+    assert.equal(busy.status, 409, path);
+    assert.deepEqual(busy.body, { error: 'A scan is already running; try again when it ends' });
+  }
+  assert.equal((await current()).repository.id, 'fixture');
+  release();
+  const done = await first;
+  assert.equal(done.status, 200);
+  assert.equal((await current()).repository.id, 'JetBrains/example');
+  // Free again: a rescan runs, and while it runs a scan is refused.
+  running = nextStart();
+  const rescan = post('rescan');
+  await running;
+  const refused = await post('scan', { url: 'JetBrains/empty' });
+  release();
+  assert.equal(refused.status, 409);
+  assert.equal((await rescan).status, 200);
+  assert.equal((await post('scan', { url: 'JetBrains/empty' })).status, 200);
+});
+
+test('the page: a repository field of its own, separate from the skill search, hidden in the export', async (t) => {
+  const { server } = await serveFixture(t);
+  const html = await (await fetch(server.url)).text();
+  const form = /<form class="repo-form" id="repo-form"[^>]*>([\s\S]*?)<\/form>/.exec(html);
+  assert.ok(form, 'the repository form');
+  // Shown by app.js on the server only.
+  assert.match(form[0], /^<form [^>]*\shidden>/);
+  assert.match(form[1], /<input id="repo-input" name="url" type="text"/);
+  assert.match(form[1], /<button class="icon-button" id="repo-scan" type="submit">Scan<\/button>/);
+  assert.doesNotMatch(form[1], /id="query"/);
+  assert.match(html, /<p class="repo-status" id="repo-status" role="status" hidden><\/p>/);
+  assert.match(html, /<p id="empty-none" hidden>This repository has no SKILL\.md in a skill folder\.<\/p>/);
+  const app = await (await fetch(`${server.url}app.js`)).text();
+  assert.match(app, /^els\.repoForm\.hidden = STATIC;$/m);
+  assert.match(app, /fetch\('api\/scan', \{/);
+
+  const out = mkdtempSync(join(tmpdir(), 'skill-atlas-site-'));
+  t.after(async () => rmSync(out, { recursive: true, force: true }));
+  const exported = spawnSync(process.execPath, [CLI, 'export', FIXTURE, out], { encoding: 'utf8' });
+  assert.equal(exported.status, 0, exported.stderr);
+  const page = readFileSync(join(out, 'index.html'), 'utf8');
+  // The export names its catalog file, so STATIC is true there and the field stays hidden.
+  assert.match(page, /<meta name="skill-atlas-catalog" content="catalog\.json">/);
+  assert.match(page, /<form class="repo-form" id="repo-form"[^>]*\shidden>/);
 });
 
 test('serve: the server listens on 127.0.0.1 only', async (t) => {
@@ -232,10 +470,17 @@ test('the CLI serves ./fixture, prints where, and stores nothing', async (t) => 
     });
     child.on('exit', (code) => reject(new Error(`exited with ${code}`)));
   });
-  const match = /^fixture · 4 skills at (http:\/\/127\.0\.0\.1:\d+\/)$/.exec(line);
+  const match = /^fixture · 5 skills at (http:\/\/127\.0\.0\.1:\d+\/)$/.exec(line);
   assert.ok(match, line);
   const catalog = (await (await fetch(`${match[1]}api/catalog`)).json()) as Catalog;
-  assert.equal(catalog.skills.length, 4);
+  assert.equal(catalog.skills.length, 5);
+  const local = await fetch(`${match[1]}api/scan`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url: FIXTURE }),
+  });
+  assert.equal(local.status, 400);
+  assert.deepEqual(await local.json(), { error: `Not a GitHub repository: ${FIXTURE}. ${USAGE}` });
   assert.deepEqual(readdirSync(cwd), []);
   const exited = new Promise((resolve) => child.on('exit', (code, signal) => resolve(code ?? signal)));
   child.kill('SIGINT');
@@ -278,7 +523,7 @@ test('export: the website as static files, with the catalog and the policy in th
   assert.equal(exported.status, 0, exported.stderr);
   assert.equal(
     exported.stdout,
-    `fixture · 4 skills → ${join(out, 'site')}\n  index.html, app.js, style.css, catalog.json, .nojekyll\n`,
+    `fixture · 5 skills → ${join(out, 'site')}\n  index.html, app.js, style.css, catalog.json, .nojekyll\n`,
   );
   assert.match(exported.stderr, /^warning: \.agents\/skills\/release-checklist\/SKILL\.md: malformed front matter: /);
   const site = join(out, 'site');
@@ -291,7 +536,7 @@ test('export: the website as static files, with the catalog and the policy in th
   assert.match(page, /<script type="module" src="app\.js"><\/script>/);
   assert.equal(readFileSync(join(site, 'app.js'), 'utf8'), readFileSync(new URL('../src/web/public/app.js', import.meta.url), 'utf8'));
   const catalog = JSON.parse(readFileSync(join(site, 'catalog.json'), 'utf8')) as Catalog;
-  assert.deepEqual(catalog.skills.map((s) => s.name), ['code-style', 'commits', 'release-checklist', 'triage']);
+  assert.deepEqual(catalog.skills.map((s) => s.name), ['code-review', 'code-style', 'commits', 'release-checklist', 'triage']);
   assert.deepEqual(catalog.owners.map((o) => o.name), ['Issue Wranglers', 'Release Team']);
 });
 

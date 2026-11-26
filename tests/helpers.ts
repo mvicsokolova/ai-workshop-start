@@ -41,6 +41,24 @@ export const EXAMPLE: Recording = {
   },
 };
 
+/** The commit GitHub answers for JetBrains/empty. */
+export const EMPTY_COMMIT = '0e3f5c1d2b4a69788796a5b4c3d2e1f0a9b8c7d6';
+
+/** What GitHub answers for JetBrains/empty, a repository without skills, through the tree. */
+export const EMPTY: Recording = {
+  'https://api.github.com/repos/JetBrains/empty': { status: 200, body: { full_name: 'JetBrains/empty', default_branch: 'main' } },
+  'https://api.github.com/repos/JetBrains/empty/commits/main': { status: 200, body: { sha: EMPTY_COMMIT } },
+  [`https://api.github.com/repos/JetBrains/empty/git/trees/${EMPTY_COMMIT}?recursive=1`]: {
+    status: 200,
+    body: { truncated: false, tree: [{ path: 'README.md', mode: '100644', type: 'blob', sha: 'd' }] },
+  },
+};
+
+/** JetBrains/missing does not exist: GitHub answers 404. */
+export const MISSING: Recording = {
+  'https://api.github.com/repos/JetBrains/missing': { status: 404, body: { message: 'Not Found' } },
+};
+
 const github = replay(EXAMPLE);
 
 /** `skill-atlas <args>`, as the CLI runs it, with GitHub answering from EXAMPLE. */
