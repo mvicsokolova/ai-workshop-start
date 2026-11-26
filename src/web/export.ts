@@ -3,7 +3,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { AtlasError } from '../core/errors.ts';
-import type { Source } from '../core/scan.ts';
+import type { Target } from '../core/scan.ts';
 import { buildCatalog, type Catalog } from './catalog.ts';
 import { PUBLIC } from './server.ts';
 
@@ -11,7 +11,7 @@ import { PUBLIC } from './server.ts';
 const CSP = "default-src 'self'; img-src 'self' https: data:; style-src 'self'; script-src 'self'";
 
 /** Scans the input and writes index.html, app.js, style.css and catalog.json into the directory. */
-export async function exportSite(source: Source, directory: string): Promise<{ catalog: Catalog; files: string[] }> {
+export async function exportSite(source: Target, directory: string): Promise<{ catalog: Catalog; files: string[] }> {
   const catalog = await buildCatalog(source);
   const out = resolve(directory);
   try {

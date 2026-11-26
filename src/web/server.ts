@@ -1,4 +1,4 @@
-// `skill-atlas serve`: the catalog of one repository as a website on this machine. The page can then
+// `skill-atlas serve`: the catalog of one repository, or of an organization, as a website on this machine. The page can then
 // scan another GitHub repository, which becomes the current one. The scan is kept in memory while the
 // server runs; nothing is written to disk.
 import { readFile } from 'node:fs/promises';
@@ -6,13 +6,13 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import type { AddressInfo } from 'node:net';
 import { AtlasError } from '../core/errors.ts';
 import { parseGitHubUrl } from '../core/github.ts';
-import type { Source } from '../core/scan.ts';
+import type { Target } from '../core/scan.ts';
 import { buildCatalog, type Catalog } from './catalog.ts';
 
 export type ServeOptions = {
-  /** What to scan: a GitHub URL or a directory. */
+  /** What to scan: a GitHub repository or organization URL, or a directory. */
   input: string;
-  open(input: string): Promise<Source>;
+  open(input: string): Promise<Target>;
   /** 0 picks a free port. */
   port: number;
   host?: string;
@@ -31,7 +31,7 @@ const ASSETS: Record<string, { file: string; type: string }> = {
 /** Scans first, so a repository that cannot be read fails before the server starts. */
 export async function startServer(options: ServeOptions): Promise<RunningServer> {
   let catalog = await buildCatalog(await options.open(options.input));
-  /** The repository /api/rescan scans: the last one scanned successfully. */
+  /** What /api/rescan scans: the last one scanned successfully, an organization too. */
   let current = options.input;
   /** One scan at a time: a second request while one runs is a 409. */
   let scanning = false;
