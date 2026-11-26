@@ -30,6 +30,7 @@ JetBrains/intellij-community · 41 skills at http://127.0.0.1:4173/
 - **Search** as you type, across names, descriptions and the full text of every SKILL.md
 - **Filter** by topic, owning team (from `OWNERSHIP` files) and contents: scripts, references, …
 - **Read** a skill rendered, with its table of contents, the skills it links to and from, and its files
+- **Scan another** GitHub repository from the page (`owner/repo`), without restarting the server
 - Every view is a shareable URL; press `?` for the keyboard shortcuts
 
 Set `GITHUB_TOKEN` for a higher GitHub rate limit; without it GitHub allows 60 API calls an hour,

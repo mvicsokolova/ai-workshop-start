@@ -362,6 +362,32 @@ test('scan: one scan at a time; a second scan or rescan while one runs → 409, 
   assert.equal((await post('scan', { url: 'JetBrains/empty' })).status, 200);
 });
 
+test('the page: a repository field of its own, separate from the skill search, hidden in the export', async (t) => {
+  const { server } = await serveFixture(t);
+  const html = await (await fetch(server.url)).text();
+  const form = /<form class="repo-form" id="repo-form"[^>]*>([\s\S]*?)<\/form>/.exec(html);
+  assert.ok(form, 'the repository form');
+  // Shown by app.js on the server only.
+  assert.match(form[0], /^<form [^>]*\shidden>/);
+  assert.match(form[1], /<input id="repo-input" name="url" type="text"/);
+  assert.match(form[1], /<button class="icon-button" id="repo-scan" type="submit">Scan<\/button>/);
+  assert.doesNotMatch(form[1], /id="query"/);
+  assert.match(html, /<p class="repo-status" id="repo-status" role="status" hidden><\/p>/);
+  assert.match(html, /<p id="empty-none" hidden>This repository has no SKILL\.md in a skill folder\.<\/p>/);
+  const app = await (await fetch(`${server.url}app.js`)).text();
+  assert.match(app, /^els\.repoForm\.hidden = STATIC;$/m);
+  assert.match(app, /fetch\('api\/scan', \{/);
+
+  const out = mkdtempSync(join(tmpdir(), 'skill-atlas-site-'));
+  t.after(async () => rmSync(out, { recursive: true, force: true }));
+  const exported = spawnSync(process.execPath, [CLI, 'export', FIXTURE, out], { encoding: 'utf8' });
+  assert.equal(exported.status, 0, exported.stderr);
+  const page = readFileSync(join(out, 'index.html'), 'utf8');
+  // The export names its catalog file, so STATIC is true there and the field stays hidden.
+  assert.match(page, /<meta name="skill-atlas-catalog" content="catalog\.json">/);
+  assert.match(page, /<form class="repo-form" id="repo-form"[^>]*\shidden>/);
+});
+
 test('serve: the server listens on 127.0.0.1 only', async (t) => {
   const { server } = await serveFixture(t);
   assert.match(server.url, /^http:\/\/127\.0\.0\.1:\d+\/$/);

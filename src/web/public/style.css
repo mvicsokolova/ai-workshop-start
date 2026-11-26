@@ -129,6 +129,14 @@ mark { background: var(--mark); color: var(--mark-text); border-radius: 3px; pad
 .subtitle { margin: 14px auto 28px; color: var(--text-soft); font-size: clamp(15px, 1.8vw, 18px); }
 .subtitle strong { color: var(--text); font-weight: 600; }
 .scanned { color: var(--muted); font-size: .88em; white-space: nowrap; }
+.repo-form { display: flex; gap: 8px; max-width: 560px; margin: -10px auto 22px; }
+.repo-form input {
+  flex: 1; min-width: 0; height: 36px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); font: inherit; font-size: 14px;
+}
+.repo-form input:focus { outline: none; border-color: var(--border-strong); }
+.repo-form input:disabled { opacity: .6; }
+.repo-status { margin: -12px auto 22px; font-size: 14px; color: var(--text-soft); }
 
 .search {
   position: relative; display: flex; align-items: center;

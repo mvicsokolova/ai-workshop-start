@@ -40,6 +40,12 @@
   <section class="hero">
     <h1 id="headline">Every agent skill, <span class="gradient-text">one search away</span></h1>
     <p class="subtitle" id="subtitle">Loading the catalog…</p>
+    <form class="repo-form" id="repo-form" aria-label="Scan another GitHub repository" hidden>
+      <input id="repo-input" name="url" type="text" autocomplete="off" spellcheck="false" required
+        placeholder="Scan another repository: owner/repo or https://github.com/owner/repo" aria-label="GitHub repository to scan">
+      <button class="icon-button" id="repo-scan" type="submit">Scan</button>
+    </form>
+    <p class="repo-status" id="repo-status" role="status" hidden></p>
     <div class="search" role="search">
       <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="m20 20-3.5-3.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
       <input id="query" type="search" autocomplete="off" spellcheck="false" placeholder="Search skills by name, description or anything inside them…" aria-label="Search skills">
@@ -99,8 +105,9 @@
       <div class="grid" id="grid"></div>
       <div class="empty" id="empty" hidden>
         <div class="empty-art" aria-hidden="true">∅</div>
-        <h2>No skill matches</h2>
-        <p>Try fewer words, or <button class="link-button" id="empty-reset" type="button">reset the filters</button>.</p>
+        <h2 id="empty-title">No skill matches</h2>
+        <p id="empty-hint">Try fewer words, or <button class="link-button" id="empty-reset" type="button">reset the filters</button>.</p>
+        <p id="empty-none" hidden>This repository has no SKILL.md in a skill folder.</p>
       </div>
       <div class="warnings" id="warnings" hidden></div>
     </section>
