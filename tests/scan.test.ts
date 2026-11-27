@@ -44,7 +44,7 @@ test('./fixture: every skill, sorted by name, linked to its file, with a warning
   assert.equal(
     fixture.stdout,
     [
-      'fixture · 5 skills',
+      'fixture · 7 skills',
       'code-review — Review a change to Skill Atlas against its spec, tests and architecture.',
       `  ${root}/.agents/skills/code-review/SKILL.md`,
       "code-style — Follow the project's code style.",
@@ -52,6 +52,10 @@ test('./fixture: every skill, sorted by name, linked to its file, with a warning
       'commits — Write commit messages the way this repository does.',
       `  ${root}/.claude/skills/commits/SKILL.md`,
       '  also in .github/skills/commits/SKILL.md',
+      'handbook — The team handbook.',
+      `  ${root}/.claude/skills/handbook/SKILL.md`,
+      'handbook — The handbook before the reorganization.',
+      `  ${root}/.github/skills/old-handbook/SKILL.md`,
       'release-checklist',
       `  ${root}/.agents/skills/release-checklist/SKILL.md`,
       'triage — Triage a new issue.',

@@ -33,7 +33,7 @@ test('serve: the catalog of ./fixture, sorted by name, with owner facets from OW
   assert.equal(catalog.repository.id, 'fixture');
   assert.deepEqual(
     catalog.skills.map((s) => s.name),
-    ['code-review', 'code-style', 'commits', 'release-checklist', 'triage'],
+    ['code-review', 'code-style', 'commits', 'handbook', 'handbook', 'release-checklist', 'triage'],
   );
   assert.deepEqual(skill('triage').owners, ['Issue Wranglers', 'Release Team']);
   assert.deepEqual(catalog.owners, [
@@ -90,6 +90,33 @@ test('serve: a link to another skill opens it in the page, both ways; a link to 
     triage.html,
     new RegExp(`<a href="${ROOT}/agent/skills/triage/references/labels\\.md" target="_blank" rel="noopener noreferrer">labels guide</a>`),
   );
+});
+
+test('serve: two skills with the same name get unique keys, <name>@<directory name>; links between them stay', async (t) => {
+  const { catalog } = await serveFixture(t);
+  assert.deepEqual(
+    catalog.skills.map((s) => [s.key, s.path]),
+    [
+      ['code-review', '.agents/skills/code-review/SKILL.md'],
+      ['code-style', '.github/skills/code-style/SKILL.md'],
+      ['commits', '.claude/skills/commits/SKILL.md'],
+      ['handbook@handbook', '.claude/skills/handbook/SKILL.md'],
+      ['handbook@old-handbook', '.github/skills/old-handbook/SKILL.md'],
+      ['release-checklist', '.agents/skills/release-checklist/SKILL.md'],
+      ['triage', 'agent/skills/triage/SKILL.md'],
+    ],
+  );
+  const handbook = (key: string) => catalog.skills.find((s) => s.key === key) as CatalogSkill;
+  const old = handbook('handbook@old-handbook');
+  assert.equal(old.description, 'The handbook before the reorganization. Kept for old links.');
+  assert.deepEqual(old.links, ['handbook@handbook']);
+  assert.match(
+    old.html,
+    /<a href="#\/\?skill=handbook%40handbook" data-skill="handbook@handbook" class="skill-link">new handbook<\/a>/,
+  );
+  assert.deepEqual(old.linkedFrom, []);
+  assert.deepEqual(handbook('handbook@handbook').linkedFrom, ['handbook@old-handbook']);
+  assert.deepEqual(handbook('handbook@handbook').links, []);
 });
 
 test('serve: on GitHub, links pin the scanned commit; relative links stay in the repository', async (t) => {
@@ -202,7 +229,7 @@ test('serve: rescan answers the new catalog; a failed rescan is a 502 and keeps 
   const first = server.catalog().scannedAt;
   const rescanned = await fetch(`${server.url}api/rescan`, { method: 'POST' });
   assert.equal(rescanned.status, 200);
-  assert.equal(((await rescanned.json()) as Catalog).skills.length, 5);
+  assert.equal(((await rescanned.json()) as Catalog).skills.length, 7);
   assert.equal(scans, 2);
   const kept = server.catalog().scannedAt;
   assert.ok(kept >= first);
@@ -470,10 +497,10 @@ test('the CLI serves ./fixture, prints where, and stores nothing', async (t) => 
     });
     child.on('exit', (code) => reject(new Error(`exited with ${code}`)));
   });
-  const match = /^fixture · 5 skills at (http:\/\/127\.0\.0\.1:\d+\/)$/.exec(line);
+  const match = /^fixture · 7 skills at (http:\/\/127\.0\.0\.1:\d+\/)$/.exec(line);
   assert.ok(match, line);
   const catalog = (await (await fetch(`${match[1]}api/catalog`)).json()) as Catalog;
-  assert.equal(catalog.skills.length, 5);
+  assert.equal(catalog.skills.length, 7);
   const local = await fetch(`${match[1]}api/scan`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -523,7 +550,7 @@ test('export: the website as static files, with the catalog and the policy in th
   assert.equal(exported.status, 0, exported.stderr);
   assert.equal(
     exported.stdout,
-    `fixture · 5 skills → ${join(out, 'site')}\n  index.html, app.js, style.css, catalog.json, .nojekyll\n`,
+    `fixture · 7 skills → ${join(out, 'site')}\n  index.html, app.js, style.css, catalog.json, .nojekyll\n`,
   );
   assert.match(exported.stderr, /^warning: \.agents\/skills\/release-checklist\/SKILL\.md: malformed front matter: /);
   const site = join(out, 'site');
@@ -536,7 +563,7 @@ test('export: the website as static files, with the catalog and the policy in th
   assert.match(page, /<script type="module" src="app\.js"><\/script>/);
   assert.equal(readFileSync(join(site, 'app.js'), 'utf8'), readFileSync(new URL('../src/web/public/app.js', import.meta.url), 'utf8'));
   const catalog = JSON.parse(readFileSync(join(site, 'catalog.json'), 'utf8')) as Catalog;
-  assert.deepEqual(catalog.skills.map((s) => s.name), ['code-review', 'code-style', 'commits', 'release-checklist', 'triage']);
+  assert.deepEqual(catalog.skills.map((s) => s.name), ['code-review', 'code-style', 'commits', 'handbook', 'handbook', 'release-checklist', 'triage']);
   assert.deepEqual(catalog.owners.map((o) => o.name), ['Issue Wranglers', 'Release Team']);
 });
 

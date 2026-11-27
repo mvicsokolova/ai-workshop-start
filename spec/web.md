@@ -59,6 +59,9 @@ commit), skills (sorted by name, then repository), warnings, owner, topic and **
 Per skill, besides the scan: repository (`owner/repo`), *key* (the name; `<repo>/<name>` in an
 organization: unique, the page opens a skill by it), link (its own repository's commit), directory, copies and files *with links*, owners, topics, html,
 headings, links, linkedFrom, text, words.
+- **Key**: two skills of one repository with the same name (front matter) → *both* are
+  `<name>@<directory name>`, `<repo>/<name>@<directory name>` in an organization; each opens, and
+  links between them stay
 - **Owners**: the `owner '<team>'` lines of the skill's `OWNERSHIP` file; `"…"` or no quotes too
 - **Topics**: keywords in the *name and description*; none, one or several
 - **html**: the body as Markdown; *raw HTML is shown as text*, `javascript:` and other

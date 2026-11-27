@@ -55,7 +55,7 @@ test('input: a bare <org> is an organization unless a local path of that name ex
   // `fixture` is a directory here: the path wins, GitHub is not asked.
   const local = spawnSync(process.execPath, [CLI, 'scan', 'fixture'], { cwd: join(FIXTURE, '..'), encoding: 'utf8' });
   assert.equal(local.status, 0, local.stderr);
-  assert.match(local.stdout, /^fixture · 5 skills\n/);
+  assert.match(local.stdout, /^fixture · 7 skills\n/);
 
   const cwd = mkdtempSync(join(tmpdir(), 'skill-atlas-'));
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
@@ -306,6 +306,30 @@ test('catalog of an organization: every skill has its repository and a unique ke
     'Acme/kotlin: .agents/skills/bump/SKILL.md: malformed front matter: Nested mappings are not allowed in compact mappings at line 3, column 14; using the directory name',
     'Acme/broken: GitHub answered 500 for https://api.github.com/repos/Acme/broken/commits/main: Server Error',
   ]);
+});
+
+test('catalog of an organization: two skills with the same name in one repository → <repo>/<name>@<directory name>', async (t) => {
+  const commit = '6666666666666666666666666666666666666666';
+  const fetch = replay({
+    ...ownerRecording('Twins', 'Organization', [{ name: 'docs' }, { name: 'app' }]),
+    ...repositoryRecording('Twins/docs', commit, {
+      '.claude/skills/a/SKILL.md': '---\nname: same\ndescription: First.\n---\nA\n',
+      '.claude/skills/b/SKILL.md': '---\nname: same\ndescription: Second.\n---\nSee [a](../a/SKILL.md)\n',
+    }),
+    ...repositoryRecording('Twins/app', commit, { '.claude/skills/same/SKILL.md': '---\nname: same\ndescription: Third.\n---\n' }),
+  });
+  const server = await startServer({ input: 'https://github.com/Twins', open: (input) => openInput(input, { fetch, everyFile: true }), port: 0 });
+  t.after(() => server.close());
+  const catalog = (await (await globalThis.fetch(`${server.url}api/catalog`)).json()) as Catalog;
+  // The same name in another repository is no clash: its key is `<repo>/<name>`.
+  assert.deepEqual(
+    catalog.skills.map((s) => [s.key, s.description, s.links, s.linkedFrom]),
+    [
+      ['app/same', 'Third.', [], []],
+      ['docs/same@a', 'First.', [], ['docs/same@b']],
+      ['docs/same@b', 'Second.', ['docs/same@a'], []],
+    ],
+  );
 });
 
 test('catalog of one repository: kind repository, keys are names, one repository in the facet', async (t) => {

@@ -8,7 +8,10 @@ export type FileLink = { path: string; link: string };
 
 export type CatalogSkill = {
   id: string;
-  /** What the page calls it, unique in the catalog: the name; `<repo>/<name>` in an organization. */
+  /**
+   * What the page calls it, unique in the catalog: the name, `<name>@<directory name>` when another
+   * skill of its repository has the same name; prefixed `<repo>/` in an organization.
+   */
   key: string;
   /** `owner/repo`. */
   repository: string;
@@ -104,28 +107,43 @@ function catalog(kind: Catalog['kind'], repository: Repository, skills: CatalogS
   };
 }
 
-/** One repository's skills, keyed `<prefix><name>`; links between skills stay in the repository. */
+/** One repository's skills, keyed `<prefix><name>` (see `skillKeys`); links between skills stay in the repository. */
 async function repositorySkills(
   source: Source,
   prefix: string,
 ): Promise<{ repository: Repository; skills: CatalogSkill[]; warnings: string[] }> {
   const result = await scan(source);
   const { repository } = result;
+  const keys = skillKeys(result.skills, prefix);
   const byPath = new Map<string, string>();
-  for (const skill of result.skills) {
+  result.skills.forEach((skill, index) => {
     for (const path of [skill.path, ...skill.copies]) {
-      byPath.set(path, prefix + skill.name);
-      byPath.set(path.slice(0, path.lastIndexOf('/')), prefix + skill.name);
+      byPath.set(path, keys[index]);
+      byPath.set(path.slice(0, path.lastIndexOf('/')), keys[index]);
     }
-  }
+  });
   const skillAt = (path: string) => byPath.get(path.replace(/\/$/, ''));
   const skills = await Promise.all(
-    result.skills.map((skill) => catalogSkill(source, repository, skill, prefix + skill.name, skillAt)),
+    result.skills.map((skill, index) => catalogSkill(source, repository, skill, keys[index], skillAt)),
   );
   for (const skill of skills) {
     for (const key of skill.links) skills.find((other) => other.key === key)?.linkedFrom.push(skill.key);
   }
   return { repository, skills, warnings: result.warnings };
+}
+
+/**
+ * Each skill's key: its name, unless another skill of the repository declares the same name; then
+ * every one of them is `<name>@<directory name>`, which is unique, as skills are grouped by directory.
+ */
+function skillKeys(skills: Skill[], prefix: string): string[] {
+  const counts = new Map<string, number>();
+  for (const skill of skills) counts.set(skill.name, (counts.get(skill.name) ?? 0) + 1);
+  return skills.map((skill) => {
+    if (counts.get(skill.name) === 1) return prefix + skill.name;
+    const directory = skill.path.slice(0, skill.path.lastIndexOf('/'));
+    return `${prefix}${skill.name}@${directory.slice(directory.lastIndexOf('/') + 1)}`;
+  });
 }
 
 async function catalogSkill(
