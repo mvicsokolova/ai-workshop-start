@@ -38,13 +38,13 @@ test('scan prints the repository, then each skill with its first sentence and pi
   );
 });
 
-test('./fixture: every skill, sorted by name, linked to its file, with a warning for the malformed one', () => {
+test('./fixture: every skill in the five roots, sorted by name, linked to its file, with a warning for the malformed one', () => {
   const root = pathToFileURL(FIXTURE).href;
   assert.equal(fixture.code, 0);
   assert.equal(
     fixture.stdout,
     [
-      'fixture · 5 skills',
+      'fixture · 6 skills',
       'code-review — Review a change to Skill Atlas against its spec, tests and architecture.',
       `  ${root}/.agents/skills/code-review/SKILL.md`,
       "code-style — Follow the project's code style.",
@@ -52,6 +52,8 @@ test('./fixture: every skill, sorted by name, linked to its file, with a warning
       'commits — Write commit messages the way this repository does.',
       `  ${root}/.claude/skills/commits/SKILL.md`,
       '  also in .github/skills/commits/SKILL.md',
+      'pdf — Fill in PDF forms.',
+      `  ${root}/skills/pdf/SKILL.md`,
       'release-checklist',
       `  ${root}/.agents/skills/release-checklist/SKILL.md`,
       'triage — Triage a new issue.',
