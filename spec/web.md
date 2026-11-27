@@ -89,6 +89,19 @@ headings, links, linkedFrom, text, words.
 - Light and dark, the system's by default; works on a phone
 - Loads only its own scripts and styles (Content-Security-Policy)
 
+## Look
+A blocky pixel style, original and drawn *in `style.css` only*: no image or font files, nothing
+external, the same files and Content-Security-Policy; `serve` and the export look the same.
+- **Blocks**: cards, the reader, filters, buttons and inputs are square (`border-radius: 0`) with a
+  2–4 px bevel (light top-left, dark bottom-right); buttons look pressed on `:active`
+- **Header**: a grass-on-dirt strip, CSS gradients only
+- **Palette**: earthy custom properties, the same set for *light* (grass and sky) and *dark*
+  (stone and cave); text, marks, buttons and the header reach *WCAG AA* (4.5:1) in both
+- **Font**: headings and labels in a blocky system monospace stack; the SKILL.md body in the sans
+  font, ≥15px, line height ≥1.5
+- Search marks, the selected card and focus rings stay distinct; keyboard focus is never hidden
+- `prefers-reduced-motion: reduce` turns every animation and transition off
+
 ## Repository field
 On the server only: *hidden* in the static export.
 - Its own form, separate from the skill search: `owner/repo` or `https://github.com/owner/repo`;
