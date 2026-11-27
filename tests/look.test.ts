@@ -133,6 +133,14 @@ test('look: text, marks, buttons and the header reach WCAG AA (4.5:1) in both th
     }
     // Focus rings are not text: 3:1 against the page and the cards.
     for (const bg of ['--bg', '--surface', '--bg-elevated']) assert.ok(contrast(colours['--focus'], colours[bg]) >= 3, `${theme}: --focus on ${bg}`);
+    // The header has its own ring, against every dirt shade it is drawn on.
+    for (const bg of ['--dirt', '--dirt-light', '--dirt-dark']) {
+      assert.ok(contrast(colours['--header-focus'], colours[bg]) >= 3, `${theme}: --header-focus on ${bg}`);
+    }
+    // Borders and dividers stay visible (3:1) on the page, the cards and the tags.
+    for (const bg of ['--bg', '--bg-elevated', '--surface', '--surface-strong', '--code-bg']) {
+      assert.ok(contrast(colours['--border'], colours[bg]) >= 3, `${theme}: --border on ${bg}`);
+    }
   }
   // The rules use these pairs.
   assert.equal(value(rules, 'mark', 'color'), 'var(--mark-text)');
@@ -140,6 +148,7 @@ test('look: text, marks, buttons and the header reach WCAG AA (4.5:1) in both th
   assert.equal(value(rules, '.button', 'color'), 'var(--button-text)');
   assert.equal(value(rules, '.button', 'background'), 'var(--button-bg)');
   assert.equal(value(rules, '.topbar', 'color'), 'var(--header-text)');
+  assert.equal(value(rules, '.topbar :focus-visible', 'outline-color'), 'var(--header-focus)');
 });
 
 test('look: cards, the reader, filters, buttons and inputs are square blocks with a 2–4 px bevel', async (t) => {

@@ -99,7 +99,9 @@ external, the same files and Content-Security-Policy; `serve` and the export loo
   (stone and cave); text, marks, buttons and the header reach *WCAG AA* (4.5:1) in both
 - **Font**: headings and labels in a blocky system monospace stack; the SKILL.md body in the sans
   font, ≥15px, line height ≥1.5
-- Search marks, the selected card and focus rings stay distinct; keyboard focus is never hidden
+- Search marks, the selected card and focus rings stay distinct; keyboard focus is never hidden:
+  focus rings reach 3:1 on the page, the cards and (with the header's own ring) every dirt shade
+- Borders and dividers reach 3:1 on the page, the cards, code and tags in both themes
 - `prefers-reduced-motion: reduce` turns every animation and transition off
 
 ## Repository field

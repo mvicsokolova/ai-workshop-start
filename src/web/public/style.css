@@ -41,6 +41,7 @@
   --dirt-light: #94643a;
   --dirt-dark: #5e3a1b;
   --header-text: #fff8e8;
+  --header-focus: #fff8e8;
   --shadow-color: rgba(59, 42, 23, .35);
   color-scheme: light;
 }
@@ -53,7 +54,7 @@
   --surface: #323338;
   --surface-strong: #44454b;
   --surface-hover: #3a3b40;
-  --border: #0f1012;
+  --border: #8f9097;
   --border-strong: #050506;
   --text: #f0ede4;
   --text-soft: #d3cec3;
@@ -76,6 +77,7 @@
   --dirt-light: #63432a;
   --dirt-dark: #3a240f;
   --header-text: #f6efdd;
+  --header-focus: #ffd84a;
   --shadow-color: rgba(0, 0, 0, .55);
   color-scheme: dark;
 }
@@ -125,6 +127,7 @@ mark { background: var(--mark); color: var(--mark-text); padding: 0 2px; box-sha
     conic-gradient(at 4px 4px, transparent 75%, var(--dirt-light) 0) 17px 24px / 39px 18px,
     var(--dirt);
 }
+.topbar :focus-visible { outline-color: var(--header-focus); }
 .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; font-weight: 700; }
 .brand-mark { width: 32px; height: 32px; display: grid; place-items: center; background: var(--accent); color: var(--on-accent); border: 2px solid var(--border-strong); box-shadow: var(--bevel); }
 .brand-mark svg { width: 20px; height: 20px; }
