@@ -311,7 +311,7 @@ test('catalog of an organization: every skill has its repository and a unique ke
 test('catalog of one repository: kind repository, keys are names, one repository in the facet', async (t) => {
   const server = await startServer({ input: 'github.com/JetBrains/example', open: (input) => openInput(input, { fetch: replay(EXAMPLE), everyFile: true }), port: 0 });
   t.after(() => server.close());
-  const catalog = server.catalog();
+  const catalog = server.catalog()!;
   assert.equal(catalog.kind, 'repository');
   assert.deepEqual(catalog.skills.map((s) => [s.key, s.repository]), [['commits', 'JetBrains/example']]);
   assert.deepEqual(catalog.repositories, [{ name: 'JetBrains/example', count: 1 }]);
@@ -337,7 +337,7 @@ test('server with an organization: rescan scans the organization again; api/scan
     assert.match(refused.body.error ?? '', new RegExp(`^Not a GitHub repository: ${url.replaceAll('.', '\\.')}\\. `));
   }
   assert.deepEqual(opened, ['https://github.com/Acme', 'https://github.com/Acme']);
-  assert.equal(server.catalog().kind, 'organization');
+  assert.equal(server.catalog()!.kind, 'organization');
 });
 
 test('the page: a Repository filter group, hidden unless the catalog has more than one repository, in the URL', async (t) => {

@@ -11,7 +11,7 @@ export type Context = {
   /** Errors and warnings. */
   error(text: string): void;
   /** Serves the catalog as a website until stopped; only where a server can run, in Node. */
-  serve?(input: string, port: number): Promise<void>;
+  serve?(input: string | undefined, port: number): Promise<void>;
   /** Writes the website as static files into the directory; only in Node. */
   export?(input: string, directory: string): Promise<void>;
 };
@@ -22,7 +22,9 @@ const usage = `Usage: skill-atlas <command>
 
   scan <GitHub URL | directory>   find every SKILL.md in a repository, or in every repository
                                   of an organization (https://github.com/<org>), and print it
-  serve <GitHub URL | directory>  browse them in a local website  [--port <n>, default ${DEFAULT_PORT}]
+  serve [<GitHub URL | directory>]
+                                  browse them in a local website  [--port <n>, default ${DEFAULT_PORT}];
+                                  without a repository, scan one from the page
   export <GitHub URL | directory> <out directory>
                                   the website as static files, for GitHub Pages or any host
   help                            show this help`;
@@ -53,7 +55,7 @@ async function scanCommand(args: string[], context: Context) {
   for (const warning of result.warnings) context.error(`warning: ${warning}`);
 }
 
-const serveUsage = 'Usage: skill-atlas serve <GitHub URL | directory> [--port <n>]';
+const serveUsage = 'Usage: skill-atlas serve [<GitHub URL | directory>] [--port <n>]';
 
 async function serveCommand(args: string[], context: Context) {
   let port = DEFAULT_PORT;
@@ -68,8 +70,9 @@ async function serveCommand(args: string[], context: Context) {
     else if (arg.startsWith('--')) throw new AtlasError(`Unknown option: ${arg}\n${serveUsage}`);
     else inputs.push(arg);
   }
-  if (inputs.length !== 1) throw new AtlasError(serveUsage);
-  if (!context.serve) throw new AtlasError('serve runs only in the command line: ./skill-atlas serve <GitHub URL | directory>');
+  // No repository: the server starts empty and the page scans the one asked for.
+  if (inputs.length > 1) throw new AtlasError(serveUsage);
+  if (!context.serve) throw new AtlasError('serve runs only in the command line: ./skill-atlas serve [<GitHub URL | directory>]');
   await context.serve(inputs[0], port);
 }
 

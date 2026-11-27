@@ -21,10 +21,10 @@ rebuilt daily by [.github/workflows/pages.yml](.github/workflows/pages.yml)).
 Search, filter and read every skill in your browser:
 
 ```console
-$ npm run site                      # JetBrains/intellij-community
-$ ./skill-atlas serve <GitHub URL | directory> [--port 4173]
+$ npm run site                      # no repository: enter one on the page
+$ ./skill-atlas serve [<GitHub URL | directory>] [--port 4173]
 $ ./skill-atlas export <GitHub URL | directory> site/   # static files, for any host
-JetBrains/intellij-community · 41 skills at http://127.0.0.1:4173/
+Skill Atlas at http://127.0.0.1:4173/: scan a GitHub repository from the page
 ```
 
 - **Search** as you type, across names, descriptions and the full text of every SKILL.md

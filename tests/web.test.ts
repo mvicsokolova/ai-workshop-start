@@ -199,18 +199,18 @@ test('serve: rescan answers the new catalog; a failed rescan is a 502 and keeps 
     port: 0,
   });
   t.after(() => server.close());
-  const first = server.catalog().scannedAt;
+  const first = server.catalog()!.scannedAt;
   const rescanned = await fetch(`${server.url}api/rescan`, { method: 'POST' });
   assert.equal(rescanned.status, 200);
   assert.equal(((await rescanned.json()) as Catalog).skills.length, 5);
   assert.equal(scans, 2);
-  const kept = server.catalog().scannedAt;
+  const kept = server.catalog()!.scannedAt;
   assert.ok(kept >= first);
 
   const failed = await fetch(`${server.url}api/rescan`, { method: 'POST' });
   assert.equal(failed.status, 502);
   assert.deepEqual(await failed.json(), { error: 'Cannot reach GitHub: offline' });
-  assert.equal(server.catalog().scannedAt, kept);
+  assert.equal(server.catalog()!.scannedAt, kept);
 });
 
 /** A server for ./fixture that can scan JetBrains/example, JetBrains/empty and JetBrains/missing. */
@@ -424,6 +424,88 @@ test('scan: one scan at a time; a second scan or rescan while one runs → 409, 
   assert.equal((await post('scan', { url: 'JetBrains/empty' })).status, 200);
 });
 
+test('serve without a repository: nothing is scanned until the page asks; rescan before a scan → 409', async (t) => {
+  const github = replay({ ...EXAMPLE, ...MISSING });
+  const opened: string[] = [];
+  const server = await startServer({
+    open: async (input) => {
+      opened.push(input);
+      return openGitHub(input, { fetch: github, token: 'test', everyFile: true });
+    },
+    port: 0,
+  });
+  t.after(() => server.close());
+  assert.equal(server.catalog(), null);
+  const catalog = await fetch(`${server.url}api/catalog`);
+  assert.equal(catalog.status, 200);
+  assert.equal(await catalog.json(), null);
+  assert.equal((await fetch(server.url)).status, 200);
+  const post = (path: string, body?: unknown) =>
+    fetch(`${server.url}api/${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+
+  const early = await post('rescan');
+  assert.equal(early.status, 409);
+  assert.deepEqual(await early.json(), { error: `Nothing scanned yet: scan a repository first. ${USAGE}` });
+  assert.deepEqual(opened, []);
+
+  // A failed scan keeps the server empty.
+  assert.equal((await post('scan', { url: 'JetBrains/missing' })).status, 502);
+  assert.equal(await (await fetch(`${server.url}api/catalog`)).json(), null);
+  assert.equal((await post('rescan')).status, 409);
+
+  const scanned = await post('scan', { url: 'JetBrains/example' });
+  assert.equal(scanned.status, 200);
+  assert.equal(((await scanned.json()) as Catalog).repository.id, 'JetBrains/example');
+  assert.equal(server.catalog()?.repository.id, 'JetBrains/example');
+  assert.equal((await post('rescan')).status, 200);
+  assert.deepEqual(opened, ['https://github.com/JetBrains/missing', 'https://github.com/JetBrains/example', 'https://github.com/JetBrains/example']);
+});
+
+test('the page: no repository panel in the header; without a catalog it asks for a repository and scans the one in the URL', async (t) => {
+  const server = await startServer({ open: openDirectory, port: 0 });
+  t.after(() => server.close());
+  const html = await (await fetch(server.url)).text();
+  const header = /<header class="topbar">([\s\S]*?)<\/header>/.exec(html);
+  assert.ok(header, 'the header');
+  assert.match(header[1], /<span class="brand-name">Skill&nbsp;Atlas<\/span>/);
+  assert.doesNotMatch(header[1], /class="repo"|id="repo-name"|id="repo-commit"/);
+  assert.match(html, /<div class="search" id="search" role="search">/);
+  assert.match(html, /<main class="layout" id="layout">/);
+  const app = await (await fetch(`${server.url}app.js`)).text();
+  assert.doesNotMatch(app, /\$\('repo'\)|repo-name|repo-commit/);
+  assert.match(app, /if \(next === null\) showStart\(\);/);
+  assert.match(app, /'Enter a GitHub repository to see its skills\.'/);
+  // followRepo waits for the server's answer, not for a catalog: `#/?repo=owner/repo` is scanned at once.
+  assert.match(app, /if \(STATIC \|\| !loaded \|\| scanning\) return;/);
+  const style = await (await fetch(`${server.url}style.css`)).text();
+  assert.doesNotMatch(style, /^\s*\.repo[ {:]/m);
+});
+
+test('the CLI serves without a repository, scans nothing, and npm run site does the same', async (t) => {
+  const child = spawn(process.execPath, [CLI, 'serve', '--port', '0'], { stdio: ['ignore', 'pipe', 'pipe'] });
+  let stderr = '';
+  child.stderr.on('data', (chunk) => (stderr += chunk));
+  t.after(() => child.kill());
+  const line = await new Promise<string>((resolve, reject) => {
+    let out = '';
+    child.stdout.on('data', (chunk) => {
+      out += chunk;
+      if (out.includes('\n')) resolve(out.split('\n')[0]);
+    });
+    child.on('exit', (code) => reject(new Error(`exited with ${code}`)));
+  });
+  const match = /^Skill Atlas at (http:\/\/127\.0\.0\.1:\d+\/): scan a GitHub repository from the page$/.exec(line);
+  assert.ok(match, line);
+  assert.doesNotMatch(stderr, /Scanning/);
+  assert.equal(await (await fetch(`${match[1]}api/catalog`)).json(), null);
+  const exited = new Promise((resolve) => child.on('exit', (code, signal) => resolve(code ?? signal)));
+  child.kill('SIGINT');
+  assert.equal(await exited, 0);
+
+  const scripts = (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { scripts: Record<string, string> }).scripts;
+  assert.equal(scripts.site, 'node src/cli.ts serve');
+});
+
 test('the page: a repository field of its own, separate from the skill search, hidden in the export', async (t) => {
   const { server } = await serveFixture(t);
   const html = await (await fetch(server.url)).text();
@@ -492,10 +574,11 @@ test('serve: an unreadable repository, a bad port or a port in use → a clear m
   assert.equal(missing.status, 1);
   assert.match(missing.stderr, /Not a GitHub URL or a readable directory: .*no-such-directory\n$/);
 
-  for (const args of [['--port', 'http'], ['--port', '70000'], ['--port'], ['--verbose'], []]) {
-    const bad = await atlas(['serve', ...(args.length ? [FIXTURE, ...args] : [])]);
+  // Two repositories are one too many; none is allowed (see the CLI test without a repository).
+  for (const args of [['--port', 'http'], ['--port', '70000'], ['--port'], ['--verbose'], [FIXTURE]]) {
+    const bad = await atlas(['serve', FIXTURE, ...args]);
     assert.equal(bad.code, 1, args.join(' '));
-    assert.match(bad.stderr, /Usage: skill-atlas serve <GitHub URL \| directory> \[--port <n>\]$/);
+    assert.match(bad.stderr, /Usage: skill-atlas serve \[<GitHub URL \| directory>\] \[--port <n>\]$/);
   }
 
   const busy = createServer();
@@ -511,9 +594,9 @@ test('serve exists only in the Node CLI; the browser entry says so', async () =>
   const browser = createBrowserBackend({ fetch: replay({}) });
   assert.equal(
     await browser.run('$ skill-atlas serve github.com/JetBrains/example'),
-    'serve runs only in the command line: ./skill-atlas serve <GitHub URL | directory>',
+    'serve runs only in the command line: ./skill-atlas serve [<GitHub URL | directory>]',
   );
-  assert.match(await browser.run('help'), /serve <GitHub URL \| directory>  browse them in a local website/);
+  assert.match(await browser.run('help'), /serve \[<GitHub URL \| directory>\]\n\s+browse them in a local website/);
 });
 
 test('export: the website as static files, with the catalog and the policy in the page', async (t) => {

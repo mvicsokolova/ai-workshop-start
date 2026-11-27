@@ -1,6 +1,6 @@
 # Command line
 `./skill-atlas scan <GitHub URL | directory>`
-`./skill-atlas serve <GitHub URL | directory> [--port <n>]`: see [web.md](web.md)
+`./skill-atlas serve [<GitHub URL | directory>] [--port <n>]`: see [web.md](web.md)
 `./skill-atlas export <GitHub URL | directory> <out directory>`: the same website as static files
 A GitHub URL: a repository or an organization, see [analysis.md](analysis.md#input)
 Prints the result **at once**; *nothing is stored*.
