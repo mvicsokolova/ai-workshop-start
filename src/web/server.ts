@@ -10,15 +10,20 @@ import type { Target } from '../core/scan.ts';
 import { buildCatalog, type Catalog } from './catalog.ts';
 
 export type ServeOptions = {
-  /** What to scan: a GitHub repository or organization URL, or a directory. */
-  input: string;
+  /** What to scan first: a GitHub repository or organization URL, or a directory; none: the page scans one. */
+  input?: string;
   open(input: string): Promise<Target>;
   /** 0 picks a free port. */
   port: number;
   host?: string;
 };
 
-export type RunningServer = { url: string; catalog(): Catalog; close(): Promise<void> };
+export type RunningServer = {
+  url: string;
+  /** null until a scan succeeds, when the server started without a repository. */
+  catalog(): Catalog | null;
+  close(): Promise<void>;
+};
 
 /** The page and its code. */
 export const PUBLIC = new URL('./public/', import.meta.url);
@@ -28,10 +33,13 @@ const ASSETS: Record<string, { file: string; type: string }> = {
   '/style.css': { file: 'style.css', type: 'text/css; charset=utf-8' },
 };
 
-/** Scans first, so a repository that cannot be read fails before the server starts. */
+/**
+ * Scans the input first, so a repository that cannot be read fails before the server starts. Without
+ * one, nothing is scanned until the page asks.
+ */
 export async function startServer(options: ServeOptions): Promise<RunningServer> {
-  let catalog = await buildCatalog(await options.open(options.input));
-  /** What /api/rescan scans: the last one scanned successfully, an organization too. */
+  let catalog: Catalog | null = options.input === undefined ? null : await buildCatalog(await options.open(options.input));
+  /** What /api/rescan scans: the last one scanned successfully, an organization too; none yet without an input. */
   let current = options.input;
   /** One scan at a time: a second request while one runs is a 409. */
   let scanning = false;
@@ -71,7 +79,10 @@ export async function startServer(options: ServeOptions): Promise<RunningServer>
         return json(response, 403, { error: `Only this page can scan; not ${origin}` });
       }
     }
-    if (pathname === '/api/rescan' && request.method === 'POST') return answerScan(response, current);
+    if (pathname === '/api/rescan' && request.method === 'POST') {
+      if (current === undefined) return json(response, 409, { error: `Nothing scanned yet: scan a repository first. ${USAGE}` });
+      return answerScan(response, current);
+    }
     if (pathname === '/api/scan' && request.method === 'POST') {
       // Another site can send a "simple" text/plain POST without asking first; application/json it cannot.
       if (!isJson(request.headers['content-type'])) {

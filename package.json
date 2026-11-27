@@ -13,7 +13,7 @@
   "scripts": {
     "test": "node --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "site": "node src/cli.ts serve https://github.com/JetBrains/intellij-community"
+    "site": "node src/cli.ts serve"
   },
   "dependencies": {
     "marked": "^18.3.0",

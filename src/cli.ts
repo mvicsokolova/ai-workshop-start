@@ -29,9 +29,10 @@ process.exitCode = await run(process.argv.slice(2), {
     for (const warning of catalog.warnings) console.error(`warning: ${warning}`);
   },
   async serve(input, port) {
-    console.error(`Scanning ${input}…`);
+    if (input !== undefined) console.error(`Scanning ${input}…`);
     const server = await startServer({ input, open: openEveryFile, port });
-    console.log(`${summary(server.catalog())} at ${server.url}`);
+    const catalog = server.catalog();
+    console.log(catalog ? `${summary(catalog)} at ${server.url}` : `Skill Atlas at ${server.url}: scan a GitHub repository from the page`);
     console.error('Press Ctrl+C to stop.');
     // Runs until stopped.
     await new Promise<void>((resolve) => {
