@@ -19,7 +19,7 @@ The spec in `spec/` is the source of truth; `AGENTS.md` says to update it with t
 - Spec changed → the code and the tests follow it.
 - Check the change against the decisions there, among them:
   - a skill is exactly `<root>/<name>/SKILL.md`, `<root>` one of `.agents/skills`, `.claude/skills`,
-    `.github/skills`, `agent/skills` (`SKILL_ROOTS` in `src/core/find.ts`); anything else is not a skill;
+    `.github/skills`, `agent/skills`, `skills` (`SKILL_ROOTS` in `src/core/find.ts`); anything else is not a skill;
   - the same `<name>` in two roots is one skill, printed with `also in <paths>`;
   - the name comes from the front matter, else the directory;
   - malformed front matter is a warning on stderr, and the scan goes on;

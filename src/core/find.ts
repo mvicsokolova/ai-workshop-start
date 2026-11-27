@@ -2,7 +2,7 @@
 export type SkillFile = { path: string; name: string; copies: string[] };
 
 /** Where agents keep a repository's own skills; the first root that has a skill holds the original. */
-export const SKILL_ROOTS = ['.agents/skills', '.claude/skills', '.github/skills', 'agent/skills'];
+export const SKILL_ROOTS = ['.agents/skills', '.claude/skills', '.github/skills', 'agent/skills', 'skills'];
 
 /**
  * Every `<root>/<name>/SKILL.md`, named after its directory. The same `<name>` in several roots is

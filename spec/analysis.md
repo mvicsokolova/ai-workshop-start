@@ -42,6 +42,6 @@ Skill: id = `owner/repo:path`, name, description, commit, body, files
 ## What is a project skill?
 `<root>/<name>/SKILL.md`, `<root>` is one of:
 `.agents/skills`, `.claude/skills`,
-`.github/skills`, `agent/skills`
-- The same `<name>` in two roots → one skill
+`.github/skills`, `agent/skills`, `skills` (as in anthropics/skills)
+- The same `<name>` in two roots → one skill; the first root in this order holds it, the others are copies
 - Anything else → not a skill
