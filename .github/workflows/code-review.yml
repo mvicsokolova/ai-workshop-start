@@ -30,6 +30,8 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Pull requests opened by agents such as jetbrains-air are reviewed too.
+          allowed_bots: '*'
           track_progress: true
           prompt: |
             REPO: ${{ github.repository }}
