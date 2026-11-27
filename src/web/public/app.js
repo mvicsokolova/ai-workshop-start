@@ -4,7 +4,6 @@
 
 const $ = (id) => document.getElementById(id);
 const els = {
-  repo: $('repo'), repoName: $('repo-name'), repoCommit: $('repo-commit'),
   subtitle: $('subtitle'), suggestions: $('suggestions'),
   query: $('query'), clearQuery: $('clear-query'),
   topics: $('topic-filters'), owners: $('owner-filters'), repositories: $('repository-filters'), repositoryGroup: $('repository-group'), ownerSearch: $('owner-search'), contents: $('content-filters'),
@@ -15,6 +14,7 @@ const els = {
   prev: $('prev'), next: $('next'), close: $('close'),
   detailName: $('detail-name'), detailDescription: $('detail-description'), detailTags: $('detail-tags'),
   detailActions: $('detail-actions'), toc: $('toc'), markdown: $('markdown'), detailFiles: $('detail-files'),
+  search: $('search'), layout: $('layout'),
   repoForm: $('repo-form'), repoInput: $('repo-input'), repoScan: $('repo-scan'), repoStatus: $('repo-status'),
   emptyTitle: $('empty-title'), emptyHint: $('empty-hint'), emptyNone: $('empty-none'),
   rescan: $('rescan'), theme: $('theme'), help: $('help'), shortcuts: $('shortcuts'), toast: $('toast'),
@@ -34,6 +34,8 @@ const CATALOG = document.querySelector('meta[name="skill-atlas-catalog"]')?.cont
 const STATIC = CATALOG !== 'api/catalog';
 
 let catalog;
+/** The server answered: a catalog, or none yet when it started without a repository. */
+let loaded = false;
 let skills = [];
 let visible = [];
 let selected = 0;
@@ -46,7 +48,11 @@ async function load() {
   try {
     const response = await fetch(CATALOG);
     if (!response.ok) throw new Error(`the server answered ${response.status}`);
-    useCatalog(await response.json());
+    const next = await response.json();
+    // A server started without a repository has scanned nothing yet: the page asks for one.
+    if (next === null) showStart();
+    else useCatalog(next);
+    loaded = true;
   } catch (error) {
     els.subtitle.textContent = `Could not load the catalog: ${error.message}`;
     els.subtitle.classList.add('error-text');
@@ -55,7 +61,18 @@ async function load() {
   followRepo();
 }
 
+/** Before the first scan: only the repository field, the one in the URL scanned by followRepo. */
+function showStart() {
+  els.subtitle.textContent = 'Enter a GitHub repository to see its skills.';
+  els.repoInput.placeholder = 'owner/repo or https://github.com/owner/repo';
+  els.search.hidden = els.layout.hidden = els.rescan.hidden = true;
+  readHash();
+}
+
 function useCatalog(next) {
+  els.search.hidden = els.layout.hidden = false;
+  els.rescan.hidden = STATIC;
+  els.repoInput.placeholder = 'Scan another repository: owner/repo or https://github.com/owner/repo';
   catalog = next;
   skills = catalog.skills.map((skill) => {
     const extraFiles = skill.files.filter((f) => f.path !== 'OWNERSHIP');
@@ -143,7 +160,7 @@ const sameRepo = (a, b) => a.toLowerCase() === b.toLowerCase();
 
 /** Scans the repository in the URL when it is not the one shown; puts the shown one there when it has none. */
 function followRepo() {
-  if (STATIC || !catalog || scanning) return;
+  if (STATIC || !loaded || scanning) return;
   const shown = shownRepo();
   if (!state.repo) {
     if (shown) (state.repo = shown), writeHash();
@@ -333,15 +350,8 @@ const initials = (name) =>
 
 function renderHeader() {
   const { repository } = catalog;
-  els.repo.hidden = false;
-  els.repo.href = repository.url;
-  els.repoName.textContent = repository.id;
   const organization = catalog.kind === 'organization';
   const repositories = catalog.repositories?.length ?? 0;
-  els.repoCommit.textContent = organization
-    ? `${repositories} ${repositories === 1 ? 'repository' : 'repositories'}`
-    : repository.commit ? repository.commit.slice(0, 7) : 'local';
-  els.repo.title = repository.commit ? `Scanned at commit ${repository.commit}` : repository.url;
   document.title = `${repository.id} · Skill Atlas`;
   const files = skills.reduce((n, s) => n + s.extraFiles.length, 0);
   const words = skills.reduce((n, s) => n + s.words, 0);
