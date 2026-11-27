@@ -12,6 +12,7 @@ A small repository for the tests.
 | `agent/skills/triage` | a skill in the fourth root |
 
 | `.github/skills/commits` | the same name in two roots: a copy of `.claude/skills/commits` |
+| `.claude/skills/handbook`, `.github/skills/old-handbook` | two skills with the same front-matter name `handbook`; the second links to the first |
 | `.claude/skills/commits/examples/SKILL.md` | not a skill: deeper than `<root>/<name>/SKILL.md` |
 | `.claude/skills/SKILL.md` | not a skill: directly in a root |
 | `SKILL.md` | not a skill: at the repository root |

@@ -55,7 +55,7 @@ test('input: a bare <org> is an organization unless a local path of that name ex
   // `fixture` is a directory here: the path wins, GitHub is not asked.
   const local = spawnSync(process.execPath, [CLI, 'scan', 'fixture'], { cwd: join(FIXTURE, '..'), encoding: 'utf8' });
   assert.equal(local.status, 0, local.stderr);
-  assert.match(local.stdout, /^fixture · 5 skills\n/);
+  assert.match(local.stdout, /^fixture · 7 skills\n/);
 
   const cwd = mkdtempSync(join(tmpdir(), 'skill-atlas-'));
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
