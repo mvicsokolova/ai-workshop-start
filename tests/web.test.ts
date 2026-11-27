@@ -33,7 +33,7 @@ test('serve: the catalog of ./fixture, sorted by name, with owner facets from OW
   assert.equal(catalog.repository.id, 'fixture');
   assert.deepEqual(
     catalog.skills.map((s) => s.name),
-    ['code-review', 'code-style', 'commits', 'release-checklist', 'triage'],
+    ['code-review', 'code-style', 'commits', 'pdf', 'release-checklist', 'triage'],
   );
   assert.deepEqual(skill('triage').owners, ['Issue Wranglers', 'Release Team']);
   assert.deepEqual(catalog.owners, [
@@ -202,7 +202,7 @@ test('serve: rescan answers the new catalog; a failed rescan is a 502 and keeps 
   const first = server.catalog().scannedAt;
   const rescanned = await fetch(`${server.url}api/rescan`, { method: 'POST' });
   assert.equal(rescanned.status, 200);
-  assert.equal(((await rescanned.json()) as Catalog).skills.length, 5);
+  assert.equal(((await rescanned.json()) as Catalog).skills.length, 6);
   assert.equal(scans, 2);
   const kept = server.catalog().scannedAt;
   assert.ok(kept >= first);
@@ -470,10 +470,10 @@ test('the CLI serves ./fixture, prints where, and stores nothing', async (t) => 
     });
     child.on('exit', (code) => reject(new Error(`exited with ${code}`)));
   });
-  const match = /^fixture · 5 skills at (http:\/\/127\.0\.0\.1:\d+\/)$/.exec(line);
+  const match = /^fixture · 6 skills at (http:\/\/127\.0\.0\.1:\d+\/)$/.exec(line);
   assert.ok(match, line);
   const catalog = (await (await fetch(`${match[1]}api/catalog`)).json()) as Catalog;
-  assert.equal(catalog.skills.length, 5);
+  assert.equal(catalog.skills.length, 6);
   const local = await fetch(`${match[1]}api/scan`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -523,7 +523,7 @@ test('export: the website as static files, with the catalog and the policy in th
   assert.equal(exported.status, 0, exported.stderr);
   assert.equal(
     exported.stdout,
-    `fixture · 5 skills → ${join(out, 'site')}\n  index.html, app.js, style.css, catalog.json, .nojekyll\n`,
+    `fixture · 6 skills → ${join(out, 'site')}\n  index.html, app.js, style.css, catalog.json, .nojekyll\n`,
   );
   assert.match(exported.stderr, /^warning: \.agents\/skills\/release-checklist\/SKILL\.md: malformed front matter: /);
   const site = join(out, 'site');
@@ -536,7 +536,7 @@ test('export: the website as static files, with the catalog and the policy in th
   assert.match(page, /<script type="module" src="app\.js"><\/script>/);
   assert.equal(readFileSync(join(site, 'app.js'), 'utf8'), readFileSync(new URL('../src/web/public/app.js', import.meta.url), 'utf8'));
   const catalog = JSON.parse(readFileSync(join(site, 'catalog.json'), 'utf8')) as Catalog;
-  assert.deepEqual(catalog.skills.map((s) => s.name), ['code-review', 'code-style', 'commits', 'release-checklist', 'triage']);
+  assert.deepEqual(catalog.skills.map((s) => s.name), ['code-review', 'code-style', 'commits', 'pdf', 'release-checklist', 'triage']);
   assert.deepEqual(catalog.owners.map((o) => o.name), ['Issue Wranglers', 'Release Team']);
 });
 

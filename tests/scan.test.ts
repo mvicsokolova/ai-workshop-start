@@ -11,7 +11,7 @@ import { test } from 'node:test';
 import { openGitHub } from '../src/core/github.ts';
 import { parseSkill } from '../src/core/parse.ts';
 import { replay } from '../src/core/replay.ts';
-import { atlas, CLI, EXAMPLE_COMMIT, FIXTURE } from './helpers.ts';
+import { atlas, atlasWith, CLI, EXAMPLE_COMMIT, FIXTURE, repositoryRecording } from './helpers.ts';
 
 const fixture = await atlas(['scan', FIXTURE]);
 const example = await atlas(['scan', 'github.com/JetBrains/example']);
@@ -38,13 +38,13 @@ test('scan prints the repository, then each skill with its first sentence and pi
   );
 });
 
-test('./fixture: every skill, sorted by name, linked to its file, with a warning for the malformed one', () => {
+test('./fixture: every skill in the five roots, sorted by name, linked to its file, with a warning for the malformed one', () => {
   const root = pathToFileURL(FIXTURE).href;
   assert.equal(fixture.code, 0);
   assert.equal(
     fixture.stdout,
     [
-      'fixture · 5 skills',
+      'fixture · 6 skills',
       'code-review — Review a change to Skill Atlas against its spec, tests and architecture.',
       `  ${root}/.agents/skills/code-review/SKILL.md`,
       "code-style — Follow the project's code style.",
@@ -52,6 +52,8 @@ test('./fixture: every skill, sorted by name, linked to its file, with a warning
       'commits — Write commit messages the way this repository does.',
       `  ${root}/.claude/skills/commits/SKILL.md`,
       '  also in .github/skills/commits/SKILL.md',
+      'pdf — Fill in PDF forms.',
+      `  ${root}/skills/pdf/SKILL.md`,
       'release-checklist',
       `  ${root}/.agents/skills/release-checklist/SKILL.md`,
       'triage — Triage a new issue.',
@@ -107,4 +109,38 @@ test("each skill keeps its body and the other files in its directory", async () 
   assert.match(triage?.body ?? '', /^# Triage\n\nLabel the issue first;/);
   const commits = result.skills.find((skill) => skill.name === 'commits');
   assert.deepEqual(commits?.files, ['examples/SKILL.md']);
+});
+
+test('skills/<name>/SKILL.md at the repository root is a skill, as in anthropics/skills', async () => {
+  const commit = '6666666666666666666666666666666666666666';
+  const skill = (name: string) => `---\nname: ${name}\ndescription: Work with ${name} files. Use it.\n---\n# ${name}\n`;
+  const blob = (path: string) => `  https://github.com/anthropics/skills/blob/${commit}/${path}`;
+  const scanned = await atlasWith(
+    {
+      'https://api.github.com/repos/anthropics/skills': { status: 200, body: { full_name: 'anthropics/skills', default_branch: 'main' } },
+      ...repositoryRecording('anthropics/skills', commit, {
+        'skills/pdf/SKILL.md': skill('pdf'),
+        'skills/pdf/reference.md': '# reference\n',
+        'skills/docx/SKILL.md': skill('docx'),
+        '.claude/skills/docx/SKILL.md': skill('docx'),
+        'template/SKILL.md': skill('template'), // not a skill: not in a root
+        'skills/SKILL.md': skill('root'), // not a skill: directly in the root
+        'skills/pdf/forms/SKILL.md': skill('forms'), // not a skill: deeper
+        'docs/skills/nested/SKILL.md': skill('nested'), // not a skill: a root below the repository root
+      }),
+    },
+    ['scan', 'https://github.com/anthropics/skills'],
+  );
+  assert.equal(scanned.code, 0, scanned.stderr);
+  assert.equal(
+    scanned.stdout,
+    [
+      'anthropics/skills · 2 skills',
+      'docx — Work with docx files.',
+      blob('.claude/skills/docx/SKILL.md'),
+      '  also in skills/docx/SKILL.md',
+      'pdf — Work with pdf files.',
+      blob('skills/pdf/SKILL.md'),
+    ].join('\n'),
+  );
 });
