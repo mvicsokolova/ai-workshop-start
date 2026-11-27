@@ -1,10 +1,14 @@
 # Website
-`./skill-atlas serve <GitHub URL | directory> [--port <n>]`
-`npm run site`: the same for https://github.com/JetBrains/intellij-community
-- Scans the repository given **at start** (still required); an unreadable repository fails before
+`./skill-atlas serve [<GitHub URL | directory>] [--port <n>]`
+`npm run site`: the same, *without a repository*
+- Scans the repository given **at start**, if any; an unreadable repository fails before
   serving: message, exit code 1. The page can then scan *other GitHub repositories*, see
-  [Repository field](#repository-field)
+  [Repository field](#repository-field); two repositories → the usage, exit code 1
+- **Without a repository**: *nothing is scanned* until the page asks; `GET /api/catalog` answers
+  `null`, the page shows only the repository field ("Enter a GitHub repository to see its skills."),
+  a link with `repo` scans that one at once
 - Prints `<repo> · N skills at <URL>`; for an organization `<org> · N skills in M repositories at <URL>`;
+  without a repository `Skill Atlas at <URL>: scan a GitHub repository from the page`;
   port **4173** by default, `0` picks a free one
 - An organization ([analysis.md](analysis.md#organization)): unknown, or no repository readable → message,
   exit code 1, before serving or writing
@@ -30,7 +34,8 @@ https://mvicsokolova.github.io/ai-workshop-start/
 
 ## HTTP
 - `GET /`: the page; `/app.js`, `/style.css`: its code; no other files
-- `GET /api/catalog`: the catalog as JSON
+- `GET /api/catalog`: the catalog as JSON; `null` before the first scan of a server started without
+  a repository
 - `POST /api/scan` with `{ "url": "<GitHub URL>" }`: scans that repository, answers the new catalog,
   which becomes the *current* one
   - `url`: `owner/repo` or `https://github.com/owner/repo` (as `scan` reads it: with or without the
@@ -41,7 +46,7 @@ https://mvicsokolova.github.io/ai-workshop-start/
   - A repository with *0 skills* is a valid, empty catalog: `skills: []`, empty facets
 - `POST /api/rescan`: scans the *current* repository again (the last one scanned successfully: the
   one from the command line until a scan succeeds; an organization from the command line too), answers the new catalog; a failure → *502*
-  `{ error }`, the old catalog stays
+  `{ error }`, the old catalog stays; nothing scanned yet (started without a repository) → *409* `{ error }`
 - *Only the page itself* may scan: a `POST` with an `Origin` other than the server's own
   (`http://127.0.0.1:<port>` or `http://localhost:<port>`) → *403* `{ error }`; a request without
   `Origin` (not from a browser) is allowed. `POST /api/scan` without `Content-Type: application/json`
@@ -81,6 +86,7 @@ headings, links, linkedFrom, text, words.
 - **Sort**: best match, name, longest, quickest read, most files; cards or a compact list
 - **Reader**: the rendered SKILL.md, a table of contents, owners and topics (click to filter),
   related skills, copies and files; open on GitHub, copy link or path, share; previous / next
+- **Header**: the brand, rescan, theme and help; *no repository panel*, the subtitle names the repository
 - The whole state is in the URL: shareable, Back works
 - **Repository field**: another GitHub repository, see [Repository field](#repository-field)
 - A repository with *no skills* says so ("No skills in this repository"), not "Try fewer words"
@@ -117,7 +123,7 @@ On the server only: *hidden* in the static export.
     of the link stays. A failed scan puts the repository shown back into the URL
   - Back and forward switch between the GitHub repositories scanned
   - A URL without `repo` keeps the repository shown; a GitHub one is added to the URL
-- The rescan button rescans *the repository shown*, by `POST /api/scan` for a GitHub one (the
+- The rescan button (hidden until a repository is shown) rescans *the repository shown*, by `POST /api/scan` for a GitHub one (the
   server's current one may be another, scanned in another tab), by `POST /api/rescan` for the local
   directory or the organization from the command line; then the URL names the repository shown. A success clears the
   error of an earlier failed scan
