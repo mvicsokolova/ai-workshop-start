@@ -20,6 +20,8 @@ Skill: id = `owner/repo:path`, name, description, commit, body, files
 - The link pins the *scanned commit*
 - Malformed front matter → a *warning*, the scan goes on
 - Unreachable repository → a clear message, exit code 1
+- `GITHUB_TOKEN` goes with *every* request, the file reads too, so private repositories it can
+  see are read in full; in a header, *never in a URL*
 
 ## Organization
 - Its repositories through the GitHub API, *all pages*; public ones, and the private ones

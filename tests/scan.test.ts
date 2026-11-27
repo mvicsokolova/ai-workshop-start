@@ -8,10 +8,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { test } from 'node:test';
-import { openGitHub } from '../src/core/github.ts';
+import { openGitHub, type Fetch } from '../src/core/github.ts';
 import { parseSkill } from '../src/core/parse.ts';
 import { replay } from '../src/core/replay.ts';
-import { atlas, CLI, EXAMPLE_COMMIT, FIXTURE } from './helpers.ts';
+import { atlas, CLI, EXAMPLE, EXAMPLE_COMMIT, FIXTURE } from './helpers.ts';
 
 const fixture = await atlas(['scan', FIXTURE]);
 const example = await atlas(['scan', 'github.com/JetBrains/example']);
@@ -107,4 +107,38 @@ test("each skill keeps its body and the other files in its directory", async () 
   assert.match(triage?.body ?? '', /^# Triage\n\nLabel the issue first;/);
   const commits = result.skills.find((skill) => skill.name === 'commits');
   assert.deepEqual(commits?.files, ['examples/SKILL.md']);
+});
+
+test('a private repository: GITHUB_TOKEN goes with every request, the file reads too, and never in a URL', async () => {
+  const { scan } = await import('../src/core/scan.ts');
+  const token = 'ghp_private-token';
+  const requests: { url: string; authorization?: string }[] = [];
+  const recorded = replay(EXAMPLE);
+  // Like GitHub for a private repository: without the token, every answer is 404.
+  const github: Fetch = async (url, init) => {
+    const authorization = init?.headers?.Authorization;
+    requests.push({ url, authorization });
+    if (authorization !== `Bearer ${token}`) return new Response('404: Not Found', { status: 404 });
+    return recorded(url, init);
+  };
+  for (const everyFile of [false, true]) {
+    requests.length = 0;
+    const result = await scan(await openGitHub('https://github.com/JetBrains/example', { fetch: github, token, everyFile }));
+    assert.deepEqual(result.skills.map((skill) => skill.name), ['commits']);
+    assert.deepEqual(result.warnings, []);
+    const raw = requests.filter(({ url }) => url.startsWith('https://raw.githubusercontent.com/'));
+    assert.ok(raw.length > 0);
+    assert.ok(requests.every(({ authorization }) => authorization === `Bearer ${token}`));
+    assert.ok(requests.every(({ url }) => !url.includes(token)));
+  }
+  // Without a token, the file reads send no headers: the browser reads them without a preflight.
+  const plain: (Parameters<Fetch>[1] | undefined)[] = [];
+  const open = replay(EXAMPLE);
+  await scan(
+    await openGitHub('https://github.com/JetBrains/example', {
+      fetch: (url, init) => (url.startsWith('https://raw.githubusercontent.com/') && plain.push(init), open(url, init)),
+    }),
+  );
+  assert.ok(plain.length > 0);
+  assert.ok(plain.every((init) => init === undefined));
 });
