@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' https: data:; style-src 'self'; script-src 'self'">
+  <meta name="skill-atlas-catalog" content="catalog.json">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Skill Atlas</title>
+  <meta name="color-scheme" content="dark light">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#/" aria-label="Skill Atlas, home">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32"><path d="M16 2 29 9.5v13L16 30 3 22.5v-13z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><circle cx="16" cy="16" r="4.5" fill="currentColor"/></svg>
+      </span>
+      <span class="brand-name">Skill&nbsp;Atlas</span>
+    </a>
+    <a class="repo" id="repo" target="_blank" rel="noopener noreferrer" hidden>
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.72 1.22 1.88.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.66 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8"/></svg>
+      <span id="repo-name"></span><code id="repo-commit"></code>
+    </a>
+    <div class="topbar-actions">
+      <button class="icon-button" id="rescan" type="button" title="Scan the repository again" aria-label="Scan again">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <button class="icon-button" id="theme" type="button" title="Light or dark" aria-label="Toggle light or dark theme">
+        <svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+      </button>
+      <button class="icon-button" id="help" type="button" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M6.5 10h.01M10 10h.01M13.5 10h.01M17 10h.01M8 14h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <section class="hero">
+    <h1 id="headline">Every agent skill, <span class="gradient-text">one search away</span></h1>
+    <p class="subtitle" id="subtitle">Loading the catalog…</p>
+    <form class="repo-form" id="repo-form" aria-label="Scan another GitHub repository" hidden>
+      <input id="repo-input" name="url" type="text" autocomplete="off" spellcheck="false" required
+        placeholder="Scan another repository: owner/repo or https://github.com/owner/repo" aria-label="GitHub repository to scan">
+      <button class="icon-button" id="repo-scan" type="submit">Scan</button>
+    </form>
+    <p class="repo-status" id="repo-status" role="status" hidden></p>
+    <div class="search" role="search">
+      <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="m20 20-3.5-3.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+      <input id="query" type="search" autocomplete="off" spellcheck="false" placeholder="Search skills by name, description or anything inside them…" aria-label="Search skills">
+      <button class="search-clear" id="clear-query" type="button" aria-label="Clear the search" hidden>×</button>
+      <kbd class="search-kbd" aria-hidden="true">/</kbd>
+    </div>
+    <div class="suggestions" id="suggestions" aria-label="Popular topics"></div>
+  </section>
+
+  <main class="layout">
+    <aside class="filters" id="filters" aria-label="Filters">
+      <div class="filters-head">
+        <h2>Filters</h2>
+        <button class="link-button" id="reset" type="button" hidden>Reset all</button>
+      </div>
+      <section class="filter-group">
+        <h3>Topic</h3>
+        <div class="chips" id="topic-filters"></div>
+      </section>
+      <section class="filter-group">
+        <h3>Owning team</h3>
+        <input class="mini-search" id="owner-search" type="search" placeholder="Find a team…" aria-label="Find a team" hidden>
+        <div class="checklist" id="owner-filters"></div>
+      </section>
+      <section class="filter-group" id="repository-group" hidden>
+        <h3>Repository</h3>
+        <div class="checklist" id="repository-filters"></div>
+      </section>
+      <section class="filter-group">
+        <h3>Contents</h3>
+        <div class="checklist" id="content-filters"></div>
+      </section>
+    </aside>
+
+    <section class="results" aria-live="polite">
+      <div class="results-bar">
+        <p class="results-count" id="count"></p>
+        <div class="active-filters" id="active"></div>
+        <div class="results-controls">
+          <button class="icon-button filters-toggle" id="filters-toggle" type="button" aria-expanded="false" aria-controls="filters">Filters</button>
+          <label class="select">
+            <span class="visually-hidden">Sort by</span>
+            <select id="sort">
+              <option value="relevance">Best match</option>
+              <option value="name">Name A–Z</option>
+              <option value="long">Longest first</option>
+              <option value="short">Quickest read</option>
+              <option value="files">Most files</option>
+            </select>
+          </label>
+          <div class="segmented" role="group" aria-label="Layout">
+            <button type="button" id="view-grid" aria-pressed="true" title="Cards">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z" fill="currentColor"/></svg>
+            </button>
+            <button type="button" id="view-list" aria-pressed="false" title="Compact list">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h16" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="grid" id="grid"></div>
+      <div class="empty" id="empty" hidden>
+        <div class="empty-art" aria-hidden="true">∅</div>
+        <h2 id="empty-title">No skill matches</h2>
+        <p id="empty-hint">Try fewer words, or <button class="link-button" id="empty-reset" type="button">reset the filters</button>.</p>
+        <p id="empty-none" hidden>This repository has no SKILL.md in a skill folder.</p>
+      </div>
+      <div class="warnings" id="warnings" hidden></div>
+    </section>
+  </main>
+
+  <div class="scrim" id="scrim" hidden></div>
+  <article class="detail" id="detail" role="dialog" aria-modal="true" aria-labelledby="detail-name" hidden>
+    <header class="detail-head">
+      <div class="detail-nav">
+        <button class="icon-button" id="prev" type="button" title="Previous skill (k)" aria-label="Previous skill">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <span class="detail-position" id="position"></span>
+        <button class="icon-button" id="next" type="button" title="Next skill (j)" aria-label="Next skill">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+      <button class="icon-button" id="close" type="button" title="Close (Esc)" aria-label="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+      </button>
+    </header>
+    <div class="detail-scroll" id="detail-scroll">
+      <div class="detail-intro">
+        <h2 id="detail-name"></h2>
+        <p class="detail-description" id="detail-description"></p>
+        <div class="detail-tags" id="detail-tags"></div>
+        <div class="detail-actions" id="detail-actions"></div>
+      </div>
+      <div class="detail-body">
+        <nav class="toc" id="toc" aria-label="On this page"></nav>
+        <div class="markdown" id="markdown"></div>
+      </div>
+      <section class="detail-files" id="detail-files"></section>
+    </div>
+  </article>
+
+  <dialog class="shortcuts" id="shortcuts">
+    <h2>Keyboard shortcuts</h2>
+    <dl>
+      <div><dt><kbd>/</kbd> <kbd>⌘K</kbd></dt><dd>Search</dd></div>
+      <div><dt><kbd>↑</kbd> <kbd>↓</kbd> <kbd>j</kbd> <kbd>k</kbd></dt><dd>Move between skills</dd></div>
+      <div><dt><kbd>Enter</kbd></dt><dd>Open the selected skill</dd></div>
+      <div><dt><kbd>Esc</kbd></dt><dd>Close, then clear the search</dd></div>
+      <div><dt><kbd>c</kbd></dt><dd>Copy the open skill's link</dd></div>
+      <div><dt><kbd>g</kbd></dt><dd>Open the skill on GitHub</dd></div>
+      <div><dt><kbd>t</kbd></dt><dd>Light or dark</dd></div>
+      <div><dt><kbd>?</kbd></dt><dd>This help</dd></div>
+    </dl>
+    <form method="dialog"><button class="button" type="submit">Got it</button></form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>
